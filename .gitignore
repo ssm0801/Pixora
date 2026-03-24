@@ -1,0 +1,13 @@
+.claude/
+
+frontend/node_modules
+frontend/.next
+frontend/.env*
+frontend/.env
+frontend/.next/
+frontend/next-env.d.ts
+frontend/CLAUDE.md
+frontend/AGENTS.md
+
+backend/node_modules
+backend/.env*
