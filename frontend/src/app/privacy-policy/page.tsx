@@ -26,7 +26,7 @@ export default function PrivacyPolicyPage() {
         <p>We use your data solely to operate Pixora — authenticate your account, send notifications, and display your name in event contexts. We do not sell, rent, or share your personal data with third parties for marketing purposes.</p>
 
         <h2>3. Photos and content</h2>
-        <p>Photos you upload are stored securely on Cloudinary's CDN and are accessible only to members of the event they belong to. We do not use your photos for any purpose other than displaying them within Pixora.</p>
+        <p>Photos you upload are stored securely on our cloud infrastructure and are accessible only to members of the event they belong to. We do not use your photos for any purpose other than displaying them within Pixora.</p>
 
         <h2>4. Cookies</h2>
         <p>We use strictly necessary cookies to keep you signed in. We do not use advertising or tracking cookies.</p>

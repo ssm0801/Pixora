@@ -43,7 +43,7 @@ const faqs = [
   },
   {
     q: 'Is my data secure?',
-    a: 'Yes. All data is encrypted in transit (HTTPS). Photos are stored on Cloudinary\'s secure CDN. We never sell or share your personal data.',
+    a: 'Yes. All data is encrypted in transit (HTTPS). Photos are stored on secure cloud storage. We never sell or share your personal data.',
   },
 ];
 
