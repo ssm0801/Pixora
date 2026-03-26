@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,21 +10,44 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import GoogleButton from '@/components/GoogleButton';
 
-export default function LoginPage() {
+const DEACTIVATED_MSG =
+  'This account has been deactivated. Please contact our support team to resolve this.';
+
+function LoginForm() {
   const { login } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [form, setForm] = useState({ email: '', password: '' });
+  const [contactTeamMsg, setContactTeamMsg] = useState<string | null>(null);
+
+  // Handle error params set by Google OAuth redirect
+  useEffect(() => {
+    const error = searchParams.get('error');
+    if (error === 'account_deactivated') {
+      setContactTeamMsg(DEACTIVATED_MSG);
+    } else if (error === 'oauth_failed') {
+      toast.error('Google sign-in failed. Please try again.');
+    }
+  }, [searchParams]);
+
+  const redirect = searchParams.get('redirect');
+  const redirectTo = redirect?.startsWith('/') ? redirect : '/';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    setContactTeamMsg(null);
     setIsLoading(true);
     try {
       await login(form.email, form.password);
       toast.success('Welcome back!');
-      router.push('/');
+      router.push(redirectTo);
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Login failed');
+      if (err.response?.data?.code === 'ACCOUNT_DEACTIVATED') {
+        setContactTeamMsg(err.response.data.message);
+      } else {
+        toast.error(err.response?.data?.message || 'Login failed');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -75,6 +98,14 @@ export default function LoginPage() {
                 className="h-9 text-[14px]"
               />
             </div>
+            {contactTeamMsg && (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/8 px-3 py-2.5 text-[12.5px] text-destructive leading-snug">
+                <span className="font-semibold">Account unavailable.</span> {contactTeamMsg}{' '}
+                <a href="mailto:support@pixora.app" className="underline underline-offset-2 font-medium hover:opacity-80">
+                  Contact support
+                </a>
+              </div>
+            )}
             <Button type="submit" className="w-full h-9 text-[13.5px]" disabled={isLoading}>
               {isLoading ? 'Signing in…' : 'Sign in'}
             </Button>
@@ -91,7 +122,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <GoogleButton label="Continue with Google" />
+          <GoogleButton label="Continue with Google" redirectTo={redirectTo} />
         </div>
 
         <p className="text-center text-[13px] text-muted-foreground">
@@ -102,5 +133,17 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-[88vh] flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }

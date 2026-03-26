@@ -2,9 +2,11 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
-export default function GoogleButton({ label = 'Continue with Google' }: { label?: string }) {
+export default function GoogleButton({ label = 'Continue with Google', redirectTo }: { label?: string; redirectTo?: string }) {
   const handleClick = () => {
-    // Full-page redirect — browser follows Google OAuth flow
+    if (redirectTo && redirectTo !== '/') {
+      sessionStorage.setItem('pixora_redirect', redirectTo);
+    }
     window.location.href = `${API_URL}/auth/google`;
   };
 

@@ -1,36 +1,75 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pixora — Frontend
 
-## Getting Started
+Next.js 15 (App Router) frontend for Pixora.
 
-First, run the development server:
+## Requirements
+
+- Node.js 18+
+- Backend API running (see `../backend/README.md`)
+
+## Setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.local.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Fill in `.env.local`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | Description |
+|----------|-------------|
+| `NEXT_PUBLIC_API_URL` | Backend API URL, e.g. `http://localhost:5001/api` |
+| `NEXT_PUBLIC_SITE_URL` | This app's public URL, e.g. `http://localhost:3000` |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Running locally
 
-## Learn More
+```bash
+npm install
+npm run dev    # starts on http://localhost:3000
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Scripts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Development server with hot reload |
+| `npm run build` | Production build |
+| `npm start` | Start production server |
+| `npm run lint` | Run ESLint |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Pages
 
-## Deploy on Vercel
+| Route | Description |
+|-------|-------------|
+| `/` | Landing page (logged out) or event dashboard (logged in) |
+| `/login` | Email/password login + Google OAuth |
+| `/register` | Create account |
+| `/create-event` | Create a new event (protected) |
+| `/join` | Join an event by code or QR scan (protected) |
+| `/event/[eventId]` | Event gallery — tile/list views, folders, favourites, multi-select (protected) |
+| `/event/[eventId]/settings` | Event settings — edit info, members, invite QR, danger zone (protected) |
+| `/event/[eventId]/analytics` | Event analytics — upload timeline, top uploaders, folder & camera breakdown (admin) |
+| `/event/[eventId]/trash` | Recycle bin — restore or permanently delete soft-deleted photos (admin) |
+| `/notifications` | In-app notification centre (protected) |
+| `/profile` | Edit profile, change password, delete account (protected) |
+| `/about` | About page |
+| `/pricing` | Pricing page |
+| `/faqs` | FAQs |
+| `/contact` | Contact page |
+| `/privacy-policy` | Privacy policy |
+| `/terms` | Terms of service |
+| `/refunds` | Refund policy |
+| `/auth/callback` | Google OAuth callback handler |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Key libraries
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Library | Purpose |
+|---------|---------|
+| `next` 15 | App Router, server components |
+| `tailwindcss` | Utility-first styling |
+| `shadcn/ui` | Component primitives |
+| `axios` | HTTP client |
+| `sonner` | Toast notifications |
+| `react-qr-code` | QR code generation |
+| `jszip` | Client-side bulk ZIP download |
+| `next-themes` | Dark / light mode |
+| `lucide-react` | Icons |

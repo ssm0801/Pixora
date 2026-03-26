@@ -32,7 +32,10 @@ function CallbackHandler() {
         saveAuth(token, data.user);
         setAuthUser(data.user); // push user into shared context immediately
         toast.success(`Welcome, ${data.user.name}!`);
-        router.replace('/');
+        const stored = sessionStorage.getItem('pixora_redirect');
+        sessionStorage.removeItem('pixora_redirect');
+        const dest = stored?.startsWith('/') ? stored : '/';
+        router.replace(dest);
       } catch {
         localStorage.removeItem('pixora_token');
         toast.error('Failed to complete sign-in. Please try again.');

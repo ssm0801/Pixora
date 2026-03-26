@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -8,9 +8,18 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
 
+  // Capture the intended URL once at mount — before any navigation begins.
+  // Using a ref ensures this value never changes even if the component
+  // re-renders during the router.push transition.
+  const intendedPath = useRef(
+    typeof window !== 'undefined'
+      ? window.location.pathname + window.location.search
+      : '/'
+  );
+
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.push('/login');
+      router.push(`/login?redirect=${encodeURIComponent(intendedPath.current)}`);
     }
   }, [isAuthenticated, isLoading, router]);
 

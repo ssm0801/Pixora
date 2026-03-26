@@ -35,6 +35,10 @@ export const protect = async (
       res.status(401).json({ success: false, message: 'User not found' });
       return;
     }
+    if (user.isActive === false) {
+      res.status(403).json({ success: false, message: 'Account deactivated' });
+      return;
+    }
 
     req.user = user;
     next();

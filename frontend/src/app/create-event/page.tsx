@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { eventApi } from '@/lib/api';
 import { toast } from 'sonner';
+import { ChevronLeft } from 'lucide-react';
 
 export default function CreateEventPage() {
   const router = useRouter();
@@ -39,6 +40,11 @@ export default function CreateEventPage() {
     <ProtectedRoute>
       <div className="min-h-[88vh] flex items-center justify-center px-4">
         <div className="w-full max-w-[26rem] space-y-6">
+
+          <Button variant="ghost" size="sm" onClick={() => router.back()} className="gap-1.5 -ml-2">
+            <ChevronLeft className="h-4 w-4" />
+            Back
+          </Button>
 
           <div className="space-y-1">
             <h1 className="text-[1.6rem]">Create event</h1>

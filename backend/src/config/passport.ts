@@ -16,6 +16,10 @@ passport.use(
           return done(new Error('No email returned from Google'), undefined);
         }
 
+        const firstName = profile.name?.givenName || profile.displayName.split(' ')[0] || 'User';
+        const lastName = profile.name?.familyName || profile.displayName.split(' ').slice(1).join(' ') || '';
+        const avatar = profile.photos?.[0]?.value;
+
         // Check if a user with this googleId already exists
         let user = await User.findOne({ googleId: profile.id });
 
@@ -24,18 +28,24 @@ passport.use(
           user = await User.findOne({ email });
           if (user) {
             user.googleId = profile.id;
-            user.avatar = profile.photos?.[0]?.value;
-            await user.save();
           } else {
             // Brand new user via Google
-            user = await User.create({
-              name: profile.displayName,
-              email,
-              googleId: profile.id,
-              avatar: profile.photos?.[0]?.value,
-            });
+            user = new User({ email, googleId: profile.id });
           }
         }
+
+        // Block deactivated accounts
+        if (user.isActive === false) {
+          const err = new Error('Account deactivated') as any;
+          err.code = 'ACCOUNT_DEACTIVATED';
+          return done(err, undefined);
+        }
+
+        // Always sync name + avatar from Google on every login
+        user.firstName = firstName;
+        user.lastName = lastName;
+        if (avatar) user.avatar = avatar;
+        await user.save();
 
         return done(null, user);
       } catch (err) {

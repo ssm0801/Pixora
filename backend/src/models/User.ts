@@ -2,21 +2,37 @@ import mongoose, { Document, Schema } from 'mongoose';
 import bcrypt from 'bcryptjs';
 
 export interface IUser extends Document {
-  name: string;
+  firstName: string;
+  lastName: string;
+  name: string;            // auto-set to `firstName + ' ' + lastName` via pre-save
   email: string;
   password?: string;       // optional — Google OAuth users have no password
   googleId?: string;       // set for OAuth users
   avatar?: string;         // Google profile picture
+  phone?: string;          // optional phone number
+  isActive: boolean;       // false = soft-deleted; email/phone permanently reserved
+  deletedAt?: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
 const UserSchema = new Schema<IUser>(
   {
+    firstName: {
+      type: String,
+      required: [true, 'First name is required'],
+      trim: true,
+      maxlength: [50, 'First name cannot exceed 50 characters'],
+    },
+    lastName: {
+      type: String,
+      required: [true, 'Last name is required'],
+      trim: true,
+      maxlength: [50, 'Last name cannot exceed 50 characters'],
+    },
     name: {
       type: String,
-      required: [true, 'Name is required'],
       trim: true,
-      maxlength: [50, 'Name cannot exceed 50 characters'],
+      maxlength: [100, 'Name cannot exceed 100 characters'],
     },
     email: {
       type: String,
@@ -28,7 +44,7 @@ const UserSchema = new Schema<IUser>(
     },
     password: {
       type: String,
-      minlength: [6, 'Password must be at least 6 characters'],
+      minlength: [8, 'Password must be at least 8 characters'],
     },
     googleId: {
       type: String,
@@ -36,12 +52,18 @@ const UserSchema = new Schema<IUser>(
       unique: true,
     },
     avatar: { type: String },
+    phone: { type: String, trim: true, maxlength: [20, 'Phone cannot exceed 20 characters'] },
+    isActive: { type: Boolean, default: true, index: true },
+    deletedAt: { type: Date },
   },
   { timestamps: true }
 );
 
-// Hash password before saving (only when password field is modified)
+// Keep `name` in sync with firstName + lastName
 UserSchema.pre('save', async function (next) {
+  if (this.isModified('firstName') || this.isModified('lastName')) {
+    this.name = `${this.firstName} ${this.lastName}`.trim();
+  }
   if (!this.isModified('password') || !this.password) return next();
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);

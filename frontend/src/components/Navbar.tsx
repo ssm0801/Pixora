@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Sun, Moon, Camera } from 'lucide-react';
+import { notificationApi } from '@/lib/api';
+import { Sun, Moon, Camera, User, LogOut, ChevronDown, Bell } from 'lucide-react';
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -31,6 +32,25 @@ function ThemeToggle() {
 
 export default function Navbar() {
   const { user, logout, isAuthenticated } = useAuth();
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const fetchUnread = useCallback(async () => {
+    try {
+      const { data } = await notificationApi.list();
+      setUnreadCount(data.unreadCount ?? 0);
+    } catch {
+      // silently ignore
+    }
+  }, []);
+
+  // Poll for unread count every 30 seconds when authenticated
+  useEffect(() => {
+    if (!isAuthenticated) { setUnreadCount(0); return; }
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30_000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, fetchUnread]);
 
   return (
     <nav className="border-b border-border/60 bg-background/90 backdrop-blur-md sticky top-0 z-50">
@@ -58,12 +78,58 @@ export default function Navbar() {
 
           {isAuthenticated ? (
             <>
-              <div className="hidden md:flex items-center h-7 px-2.5 rounded-md bg-muted text-muted-foreground text-xs font-medium mr-1">
-                {user?.name}
+              {/* Notification bell */}
+              <Link
+                href="/notifications"
+                className="relative inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-muted transition-colors"
+                aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
+                onClick={() => setUnreadCount(0)}
+              >
+                <Bell className="h-[1.05rem] w-[1.05rem]" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold leading-none">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </Link>
+
+              {/* User dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setUserMenuOpen((o) => !o)}
+                  className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg hover:bg-muted transition-colors text-xs font-medium text-muted-foreground"
+                >
+                  <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-primary text-[11px] font-bold shrink-0">
+                    {user?.firstName?.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="hidden md:block max-w-[100px] truncate">{user?.firstName}</span>
+                  <ChevronDown className="h-3 w-3 opacity-60" />
+                </button>
+
+                {userMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
+                    <div className="absolute right-0 top-10 z-50 w-44 bg-popover border rounded-xl shadow-lg overflow-hidden py-1">
+                      <Link
+                        href="/profile"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-muted transition-colors"
+                      >
+                        <User className="h-3.5 w-3.5" />
+                        Profile
+                      </Link>
+                      <div className="my-1 border-t" />
+                      <button
+                        onClick={() => { setUserMenuOpen(false); logout(); }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-destructive hover:bg-destructive/10 transition-colors"
+                      >
+                        <LogOut className="h-3.5 w-3.5" />
+                        Sign out
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-              <Button variant="outline" size="sm" className="text-[13px]" onClick={logout}>
-                Sign out
-              </Button>
             </>
           ) : (
             <>
