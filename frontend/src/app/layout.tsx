@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist_Mono, Pixelify_Sans } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import Navbar from "@/components/Navbar";
+import FooterWrapper from "@/components/FooterWrapper";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { AuthProvider } from "@/context/AuthContext";
 import "./globals.css";
@@ -111,6 +112,21 @@ export const metadata: Metadata = {
   },
 };
 
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Pixora',
+  applicationCategory: 'PhotosApp',
+  operatingSystem: 'Web',
+  url: BASE_URL,
+  description: 'Create private photo albums for your events. Invite guests, upload memories, and share them only with the people who were there.',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'INR',
+  },
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -120,11 +136,18 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistMono.variable} ${pixelifySans.variable} h-full`}
     >
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <ThemeProvider>
           <AuthProvider>
             <Navbar />
             <main className="flex-1">{children}</main>
+            <FooterWrapper />
           {/* Toaster — bottom-right, per user request */}
           <Toaster
             richColors

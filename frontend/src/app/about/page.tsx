@@ -1,7 +1,15 @@
 import { Camera, Users, Heart, Zap } from 'lucide-react';
 import type { Metadata } from 'next';
 
-export const metadata: Metadata = { title: 'About Us' };
+export const metadata: Metadata = {
+  title: 'About Us',
+  description: 'Learn about Pixora — private event photo sharing built for photographers, couples, and families who value privacy and simplicity.',
+  alternates: { canonical: '/about' },
+  openGraph: {
+    title: 'About Us | Pixora',
+    description: 'Learn about Pixora — private event photo sharing built for photographers, couples, and families who value privacy and simplicity.',
+  },
+};
 
 const values = [
   { icon: Heart,   title: 'Privacy first',    desc: 'Your memories belong to you. We never sell data or show ads.' },

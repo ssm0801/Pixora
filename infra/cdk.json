@@ -1,0 +1,22 @@
+{
+  "app": "python3 app.py",
+  "watch": {
+    "include": ["**"],
+    "exclude": [
+      "README.md",
+      "cdk*.json",
+      "requirements*.txt",
+      ".venv",
+      "**/__pycache__",
+      "**/*.pyc",
+      "lambda/thumbnail/node_modules"
+    ]
+  },
+  "context": {
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:stackRelativeExports": true,
+    "@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy": true,
+    "@aws-cdk/aws-s3:keepNotificationInImportedBucket": false,
+    "region": "ap-south-1"
+  }
+}

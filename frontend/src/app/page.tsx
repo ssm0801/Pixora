@@ -7,7 +7,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useEvents } from '@/hooks/useEvents';
 import { Badge } from '@/components/ui/badge';
 import { Calendar, Users, ImageIcon, Plus, ArrowRight, Lock, Share2, Download, Zap, QrCode, Camera, PartyPopper, Briefcase, Heart, Star, Quote } from 'lucide-react';
-import Footer from '@/components/Footer';
 
 // ── Landing page (logged-out) ────────────────────────────────────────────────
 function LandingPage() {
@@ -252,7 +251,7 @@ function LandingPage() {
             <p className="text-[11px] font-semibold uppercase tracking-widest text-primary">Get started today</p>
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">Your memories deserve a better home</h2>
             <p className="text-muted-foreground text-[15px] max-w-md mx-auto">
-              Free to use. No credit card required. Create your first event in 30 seconds.
+              Free to use. No credit card required. Create your first event in 10 seconds.
             </p>
             <div className="flex items-center gap-3 justify-center flex-wrap pt-2">
               <Link
@@ -273,7 +272,6 @@ function LandingPage() {
         </div>
       </section>
 
-      <Footer />
     </div>
   );
 }

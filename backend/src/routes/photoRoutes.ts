@@ -1,8 +1,5 @@
 import { Router } from 'express';
-import multer from 'multer';
 import {
-  uploadPhoto,
-  uploadMultiplePhotos,
   getPhotos,
   deletePhoto,
   getTrash,
@@ -20,19 +17,12 @@ import { protect } from '../middlewares/auth';
 
 const router = Router();
 
-// Use memory storage so we can read the buffer for EXIF extraction
-const upload = multer({ storage: multer.memoryStorage() });
-
 router.use(protect as any);
 
 // ── Photo listing & favorites (no :photoId — must come before /:photoId routes)
 router.get('/favorites', getFavorites as any);
 router.get('/trash', getTrash as any);
 router.get('/', getPhotos as any);
-
-// ── Uploads
-router.post('/upload', upload.single('photo'), uploadPhoto as any);
-router.post('/upload-multiple', upload.array('photos', 20), uploadMultiplePhotos as any);
 
 // ── Per-photo actions
 router.delete('/:photoId/permanent', permanentDeletePhoto as any);

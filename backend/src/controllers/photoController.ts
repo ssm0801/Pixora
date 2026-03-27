@@ -3,7 +3,7 @@ import { AuthRequest } from '../middlewares/auth';
 import { getPhotoModel } from '../models/Photo';
 import { getFavoriteModel } from '../models/Favorite';
 import Event from '../models/Event';
-import { cloudinary, uploadBufferToCloudinary } from '../config/cloudinary';
+import { deleteFromS3 } from './mediaController';
 import { Types } from 'mongoose';
 
 // ── Helper: verify membership and return event ─────────────────────────────────
@@ -21,184 +21,6 @@ async function requireMembership(req: AuthRequest, res: Response, eventId: strin
   }
   return event;
 }
-
-// ── Helper: extract EXIF metadata from buffer ──────────────────────────────────
-async function extractExif(buffer: Buffer) {
-  try {
-    const exifr = await import('exifr');
-    const exif = await exifr.default.parse(buffer, {
-      pick: [
-        'DateTimeOriginal',
-        'GPSLatitude',
-        'GPSLongitude',
-        'Make',
-        'Model',
-        'ExifImageWidth',
-        'ExifImageHeight',
-      ],
-    });
-    if (!exif) return undefined;
-
-    return {
-      capturedAt: exif.DateTimeOriginal
-        ? new Date(exif.DateTimeOriginal)
-        : undefined,
-      lat: exif.GPSLatitude ?? undefined,
-      lng: exif.GPSLongitude ?? undefined,
-      cameraMake: exif.Make ?? undefined,
-      cameraModel: exif.Model ?? undefined,
-      width: exif.ExifImageWidth ?? undefined,
-      height: exif.ExifImageHeight ?? undefined,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-// ── POST /api/photos/upload  (admin only, field: "photo") ─────────────────────
-export const uploadPhoto = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { eventId } = req.body as { eventId: string };
-    const adminId = req.user!._id.toString();
-
-    const event = await Event.findById(eventId);
-    if (!event) {
-      res.status(404).json({ success: false, message: 'Event not found' });
-      return;
-    }
-    if (event.adminId.toString() !== adminId) {
-      res.status(403).json({ success: false, message: 'Only the admin can upload photos' });
-      return;
-    }
-
-    const PhotoModel = getPhotoModel(eventId);
-    const count = await PhotoModel.countDocuments({ isDeleted: false });
-    if (count >= 500) {
-      res.status(400).json({ success: false, message: 'Event has reached the 500-photo limit' });
-      return;
-    }
-
-    if (!req.file) {
-      res.status(400).json({ success: false, message: 'No file uploaded' });
-      return;
-    }
-
-    const buffer = req.file.buffer;
-    const originalName = req.file.originalname;
-    const fileSize = req.file.size;
-
-    // Extract EXIF
-    const exifMeta = await extractExif(buffer);
-
-    // Upload to Cloudinary
-    const uploadResult = await uploadBufferToCloudinary(buffer, {
-      folder: 'pixora',
-      use_filename: true,
-      unique_filename: true,
-      transformation: [{ quality: 'auto', fetch_format: 'auto' }],
-    });
-
-    const metadata = {
-      ...(exifMeta ?? {}),
-      fileSize,
-      width: exifMeta?.width ?? uploadResult.width,
-      height: exifMeta?.height ?? uploadResult.height,
-    };
-
-    const photo = await PhotoModel.create({
-      imageUrl: uploadResult.secure_url,
-      publicId: uploadResult.public_id,
-      originalName,
-      uploadedBy: req.user!._id,
-      metadata,
-      isPublic: false,
-    });
-
-    res.status(201).json({ success: true, photo });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// ── POST /api/photos/upload-multiple  (admin only, field: "photos", up to 20) ─
-export const uploadMultiplePhotos = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { eventId } = req.body as { eventId: string };
-    const adminId = req.user!._id.toString();
-
-    const event = await Event.findById(eventId);
-    if (!event) {
-      res.status(404).json({ success: false, message: 'Event not found' });
-      return;
-    }
-    if (event.adminId.toString() !== adminId) {
-      res.status(403).json({ success: false, message: 'Only the admin can upload photos' });
-      return;
-    }
-
-    const files = req.files as Express.Multer.File[] | undefined;
-    if (!files || files.length === 0) {
-      res.status(400).json({ success: false, message: 'No files uploaded' });
-      return;
-    }
-
-    const PhotoModel = getPhotoModel(eventId);
-    const count = await PhotoModel.countDocuments({ isDeleted: false });
-    if (count + files.length > 500) {
-      res.status(400).json({
-        success: false,
-        message: `Upload would exceed 500-photo limit (current: ${count})`,
-      });
-      return;
-    }
-
-    // Process each file: extract EXIF and upload to Cloudinary
-    const photoDocs = await Promise.all(
-      files.map(async (file) => {
-        const buffer = file.buffer;
-        const fileSize = file.size;
-
-        const exifMeta = await extractExif(buffer);
-
-        const uploadResult = await uploadBufferToCloudinary(buffer, {
-          folder: 'pixora',
-          use_filename: true,
-          unique_filename: true,
-          transformation: [{ quality: 'auto', fetch_format: 'auto' }],
-        });
-
-        const metadata = {
-          ...(exifMeta ?? {}),
-          fileSize,
-          width: exifMeta?.width ?? uploadResult.width,
-          height: exifMeta?.height ?? uploadResult.height,
-        };
-
-        return {
-          imageUrl: uploadResult.secure_url,
-          publicId: uploadResult.public_id,
-          originalName: file.originalname,
-          uploadedBy: req.user!._id,
-          metadata,
-          isPublic: false,
-        };
-      })
-    );
-
-    const photos = await PhotoModel.insertMany(photoDocs);
-    res.status(201).json({ success: true, photos });
-  } catch (error) {
-    next(error);
-  }
-};
 
 // ── GET /api/photos?eventId=xxx  (members & admin) ───────────────────────────
 // Admin: sees all non-deleted + can request deleted with ?isDeleted=true
@@ -437,8 +259,8 @@ export const permanentDeletePhoto = async (
       return;
     }
 
-    // Permanently destroy from Cloudinary and remove document
-    await cloudinary.uploader.destroy(photo.publicId);
+    // Permanently destroy from S3 (original + thumbnail)
+    await deleteFromS3(photo.publicId);
     await photo.deleteOne();
 
     // Remove any favorites for this photo

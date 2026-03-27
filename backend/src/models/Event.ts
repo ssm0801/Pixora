@@ -13,6 +13,10 @@ export interface IEvent extends Document {
   memberFolderAccess: Map<string, 'all' | string[]>;
   /** userId → 'all' | folderId[]: pre-set access for pending invitees */
   pendingInviteAccess: Map<string, 'all' | string[]>;
+  /** Soft-delete: true once admin deletes. Data retained 30 days then auto-purged. */
+  isDeleted: boolean;
+  /** When soft-delete was triggered. Auto-purge runs 30 days after this. */
+  deletedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,9 +51,19 @@ const EventSchema = new Schema<IEvent>(
     },
     memberFolderAccess: { type: Map, of: Schema.Types.Mixed, default: () => new Map() },
     pendingInviteAccess: { type: Map, of: Schema.Types.Mixed, default: () => new Map() },
+    isDeleted: { type: Boolean, default: false, index: true },
+    deletedAt: { type: Date },
   },
   { timestamps: true }
 );
+
+// Automatically exclude soft-deleted events from all queries unless explicitly requested
+EventSchema.pre(/^find/, function (this: any, next) {
+  if (this.getOptions()?.includeDeleted !== true) {
+    this.where({ isDeleted: { $ne: true } });
+  }
+  next();
+});
 
 // Auto-generate a unique join code before first save
 EventSchema.pre('save', function (next) {

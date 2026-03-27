@@ -13,10 +13,11 @@ export interface IPhotoMetadata {
 
 export interface IPhoto extends Document {
   imageUrl: string;
-  publicId: string;     // Cloudinary public_id (used for deletion)
+  publicId: string;     // S3 key: {eventId}/media/{uuid}.ext
   originalName: string; // Original filename from the user's device
   uploadedBy: Types.ObjectId;
   metadata?: IPhotoMetadata;
+  mediaType?: 'photo' | 'video';
   isPublic: boolean;    // private vault: false = hidden from non-admins
   isDeleted: boolean;   // recycle bin soft-delete
   deletedAt?: Date;
@@ -50,6 +51,7 @@ const PhotoSchema = new Schema<IPhoto>(
       required: true,
     },
     metadata:  { type: PhotoMetadataSchema },
+    mediaType: { type: String, enum: ['photo', 'video'], default: 'photo' },
     isPublic:  { type: Boolean, default: false },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date },

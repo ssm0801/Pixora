@@ -11,6 +11,7 @@ import {
   removeMember,
   leaveEvent,
   deleteEvent,
+  hardDeleteEvent,
   joinByCode,
   approveJoinRequest,
   rejectJoinRequest,
@@ -30,6 +31,7 @@ router.post('/join', joinByCode as any);
 router.get('/:id', getEvent as any);
 router.patch('/:id', updateEvent as any);
 router.delete('/:id', deleteEvent as any);
+router.delete('/:id/permanent', hardDeleteEvent as any);
 router.post('/:id/accept', acceptInvite as any);
 router.post('/:id/decline', declineInvite as any);
 router.delete('/:id/members/:userId', removeMember as any);

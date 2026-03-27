@@ -1,7 +1,15 @@
 import { Mail, MessageCircle, Clock } from 'lucide-react';
 import type { Metadata } from 'next';
 
-export const metadata: Metadata = { title: 'Contact Us' };
+export const metadata: Metadata = {
+  title: 'Contact Us',
+  description: 'Get in touch with the Pixora team — we read every message and typically reply within one business day.',
+  alternates: { canonical: '/contact' },
+  openGraph: {
+    title: 'Contact Us | Pixora',
+    description: 'Get in touch with the Pixora team — we read every message and typically reply within one business day.',
+  },
+};
 
 export default function ContactPage() {
   return (

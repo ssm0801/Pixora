@@ -4,7 +4,7 @@ import { AuthRequest } from '../middlewares/auth';
 import Event from '../models/Event';
 import User from '../models/User';
 import { getPhotoModel } from '../models/Photo';
-import { cloudinary } from '../config/cloudinary';
+import { deleteFromS3 } from './mediaController';
 import { notify } from '../utils/notify';
 import { Types } from 'mongoose';
 
@@ -407,7 +407,7 @@ export const leaveEvent = async (
   }
 };
 
-// DELETE /api/events/:id  (admin only)
+// DELETE /api/events/:id  (admin only) — soft delete: suspends access, retains data 30 days
 export const deleteEvent = async (
   req: AuthRequest,
   res: Response,
@@ -419,43 +419,65 @@ export const deleteEvent = async (
       res.status(404).json({ success: false, message: 'Event not found' });
       return;
     }
-
     if (event.adminId.toString() !== req.user!._id.toString()) {
       res.status(403).json({ success: false, message: 'Only the admin can delete this event' });
       return;
     }
 
-    const eventId = event._id.toString();
-    const PhotoModel = getPhotoModel(eventId);
+    event.isDeleted = true;
+    event.deletedAt = new Date();
+    await event.save();
 
-    const photos = await PhotoModel.find({}, 'publicId');
-    const publicIds = photos.map((p) => p.publicId);
-    for (let i = 0; i < publicIds.length; i += 100) {
-      const batch = publicIds.slice(i, i + 100);
-      if (batch.length > 0) {
-        await cloudinary.api.delete_resources(batch);
-      }
-    }
-
-    const db = mongoose.connection.db;
-    if (db) {
-      for (const collectionName of [
-        `photos_${eventId}`,
-        `folders_${eventId}`,
-        `favorites_${eventId}`,
-      ]) {
-        const exists = await db.listCollections({ name: collectionName }).toArray();
-        if (exists.length > 0) await db.dropCollection(collectionName);
-      }
-    }
-
-    await event.deleteOne();
-
-    res.status(200).json({ success: true, message: 'Event and all data deleted' });
+    res.status(200).json({
+      success: true,
+      message: 'Event soft-deleted. All data will be permanently removed after 30 days.',
+    });
   } catch (error) {
     next(error);
   }
 };
+
+// DELETE /api/events/:id/permanent  (admin only) — hard delete: immediately wipes all S3 data + DB
+export const hardDeleteEvent = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    // Allow finding soft-deleted events for hard delete
+    const event = await Event.findOne({ _id: req.params.id }).setOptions({ includeDeleted: true });
+    if (!event) {
+      res.status(404).json({ success: false, message: 'Event not found' });
+      return;
+    }
+    if (event.adminId.toString() !== req.user!._id.toString()) {
+      res.status(403).json({ success: false, message: 'Only the admin can delete this event' });
+      return;
+    }
+
+    await purgeEventData(event._id.toString());
+    await event.deleteOne();
+
+    res.status(200).json({ success: true, message: 'Event and all data permanently deleted' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** Shared helper: wipe all S3 objects + per-event collections for a given eventId */
+export async function purgeEventData(eventId: string): Promise<void> {
+  const PhotoModel = getPhotoModel(eventId);
+  const photos = await PhotoModel.find({}, 'publicId');
+  await Promise.all(photos.map((p) => deleteFromS3(p.publicId)));
+
+  const db = mongoose.connection.db;
+  if (db) {
+    for (const col of [`photos_${eventId}`, `folders_${eventId}`, `favorites_${eventId}`]) {
+      const exists = await db.listCollections({ name: col }).toArray();
+      if (exists.length > 0) await db.dropCollection(col);
+    }
+  }
+}
 
 // POST /api/events/join — request to join via event code (queued for admin approval)
 export const joinByCode = async (

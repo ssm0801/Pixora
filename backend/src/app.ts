@@ -6,6 +6,7 @@ import passport from 'passport';
 import authRoutes from './routes/authRoutes';
 import eventRoutes from './routes/eventRoutes';
 import photoRoutes from './routes/photoRoutes';
+import mediaRoutes from './routes/mediaRoutes';
 import folderRoutes from './routes/folderRoutes';
 import analyticsRoutes from './routes/analyticsRoutes';
 import notificationRoutes from './routes/notificationRoutes';
@@ -31,6 +32,7 @@ app.use('/api/events', eventRoutes);
 app.use('/api/events', folderRoutes);
 app.use('/api/events', analyticsRoutes);
 app.use('/api/photos', photoRoutes);
+app.use('/api/media',  mediaRoutes);
 app.use('/api/notifications', notificationRoutes);
 
 // Health check

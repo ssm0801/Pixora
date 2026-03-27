@@ -1,0 +1,16 @@
+# Python venv
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+
+# CDK outputs
+cdk.out/
+
+# Lambda node_modules (bundled by CDK at deploy time)
+lambda/thumbnail/node_modules/
+
+# OS
+.DS_Store

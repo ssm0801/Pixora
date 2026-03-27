@@ -53,7 +53,10 @@ export const eventApi = {
     api.post('/events/invite', { eventId, email, access }),
   update: (id: string, data: { name?: string; description?: string }) =>
     api.patch(`/events/${id}`, data),
+  /** Soft delete — suspends access, data retained 30 days then auto-purged */
   delete: (id: string) => api.delete(`/events/${id}`),
+  /** Hard delete — immediately wipes all S3 data and the event record */
+  hardDelete: (id: string) => api.delete(`/events/${id}/permanent`),
   getMyInvites: () => api.get('/events/my-invites'),
   acceptInvite: (id: string) => api.post(`/events/${id}/accept`),
   declineInvite: (id: string) => api.post(`/events/${id}/decline`),
@@ -69,39 +72,33 @@ export const eventApi = {
     api.delete(`/events/${eventId}/join-requests/${userId}`),
 };
 
+// ── Media (S3 direct upload) ─────────────────────────────────────────────────
+export const mediaApi = {
+  presign: (eventId: string, data: { fileName: string; contentType: string }) =>
+    api.post('/media/presign', { eventId, ...data }),
+  presignMultipart: (
+    eventId: string,
+    data: { fileName: string; contentType: string; fileSize: number }
+  ) => api.post('/media/presign-multipart', { eventId, ...data }),
+  completeMultipart: (data: {
+    uploadId: string;
+    key: string;
+    parts: { ETag: string; PartNumber: number }[];
+  }) => api.post('/media/complete-multipart', data),
+  save: (data: {
+    eventId: string;
+    key: string;
+    originalName: string;
+    fileSize?: number;
+    resourceType?: string;
+    width?: number;
+    height?: number;
+  }) => api.post('/media/save', data),
+};
+
 // ── Photos ──────────────────────────────────────────────────────────────────
 export const photoApi = {
   list: (eventId: string) => api.get(`/photos?eventId=${eventId}`),
-  upload: (eventId: string, file: File, onProgress?: (pct: number) => void) => {
-    const form = new FormData();
-    form.append('eventId', eventId);
-    form.append('photo', file);
-    return api.post('/photos/upload', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: (e) => {
-        if (onProgress && e.total) {
-          onProgress(Math.round((e.loaded * 100) / e.total));
-        }
-      },
-    });
-  },
-  uploadMultiple: (
-    eventId: string,
-    files: File[],
-    onProgress?: (pct: number) => void
-  ) => {
-    const form = new FormData();
-    form.append('eventId', eventId);
-    files.forEach((f) => form.append('photos', f));
-    return api.post('/photos/upload-multiple', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: (e) => {
-        if (onProgress && e.total) {
-          onProgress(Math.round((e.loaded * 100) / e.total));
-        }
-      },
-    });
-  },
   delete: (photoId: string, eventId: string) =>
     api.delete(`/photos/${photoId}?eventId=${eventId}`),
   toggleVisibility: (photoId: string, eventId: string) =>
