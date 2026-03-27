@@ -78,7 +78,7 @@ export const uploadPhoto = async (
     const PhotoModel = getPhotoModel(eventId);
     const count = await PhotoModel.countDocuments({ isDeleted: false });
     if (count >= 500) {
-      res.status(400).json({ success: false, message: 'Event has reached the 500-photo limit' });
+      res.status(400).json({ success: false, message: 'Event has reached the 500-item limit' });
       return;
     }
 
@@ -90,16 +90,17 @@ export const uploadPhoto = async (
     const buffer = req.file.buffer;
     const originalName = req.file.originalname;
     const fileSize = req.file.size;
+    const isVideo = req.file.mimetype.startsWith('video/');
 
-    // Extract EXIF
-    const exifMeta = await extractExif(buffer);
+    // Extract EXIF only for images
+    const exifMeta = isVideo ? undefined : await extractExif(buffer);
 
-    // Upload to Cloudinary
+    // Upload to Cloudinary — resource_type:'auto' handles both images and videos
     const uploadResult = await uploadBufferToCloudinary(buffer, {
       folder: 'pixora',
       use_filename: true,
       unique_filename: true,
-      transformation: [{ quality: 'auto', fetch_format: 'auto' }],
+      resource_type: 'auto',
     });
 
     const metadata = {
@@ -115,6 +116,7 @@ export const uploadPhoto = async (
       originalName,
       uploadedBy: req.user!._id,
       metadata,
+      mediaType: isVideo ? 'video' : 'photo',
       isPublic: false,
     });
 
@@ -155,24 +157,25 @@ export const uploadMultiplePhotos = async (
     if (count + files.length > 500) {
       res.status(400).json({
         success: false,
-        message: `Upload would exceed 500-photo limit (current: ${count})`,
+        message: `Upload would exceed 500-item limit (current: ${count})`,
       });
       return;
     }
 
-    // Process each file: extract EXIF and upload to Cloudinary
+    // Process each file: extract EXIF (images only) and upload to Cloudinary
     const photoDocs = await Promise.all(
       files.map(async (file) => {
         const buffer = file.buffer;
         const fileSize = file.size;
+        const isVideo = file.mimetype.startsWith('video/');
 
-        const exifMeta = await extractExif(buffer);
+        const exifMeta = isVideo ? undefined : await extractExif(buffer);
 
         const uploadResult = await uploadBufferToCloudinary(buffer, {
           folder: 'pixora',
           use_filename: true,
           unique_filename: true,
-          transformation: [{ quality: 'auto', fetch_format: 'auto' }],
+          resource_type: 'auto',
         });
 
         const metadata = {
@@ -188,6 +191,7 @@ export const uploadMultiplePhotos = async (
           originalName: file.originalname,
           uploadedBy: req.user!._id,
           metadata,
+          mediaType: isVideo ? 'video' : 'photo',
           isPublic: false,
         };
       })
@@ -438,7 +442,9 @@ export const permanentDeletePhoto = async (
     }
 
     // Permanently destroy from Cloudinary and remove document
-    await cloudinary.uploader.destroy(photo.publicId);
+    await cloudinary.uploader.destroy(photo.publicId, {
+      resource_type: photo.mediaType === 'video' ? 'video' : 'image',
+    });
     await photo.deleteOne();
 
     // Remove any favorites for this photo
@@ -566,6 +572,100 @@ export const getFavorites = async (
       .sort({ 'metadata.capturedAt': -1, createdAt: -1 });
 
     res.status(200).json({ success: true, photos });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ── POST /api/photos/sign-upload  (admin only) ────────────────────────────────
+// Returns signed Cloudinary upload params so the browser can upload directly
+// to Cloudinary without routing the file through the server (single network hop).
+// Signature is valid for ~60 min and can be reused for a whole upload session.
+export const getUploadSignature = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { eventId } = req.body as { eventId: string };
+    const adminId = req.user!._id.toString();
+
+    const event = await Event.findById(eventId);
+    if (!event) {
+      res.status(404).json({ success: false, message: 'Event not found' });
+      return;
+    }
+    if (event.adminId.toString() !== adminId) {
+      res.status(403).json({ success: false, message: 'Only the admin can upload media' });
+      return;
+    }
+
+    const timestamp = Math.round(Date.now() / 1000);
+    const folder = 'pixora';
+    const signature = cloudinary.utils.api_sign_request(
+      { timestamp, folder },
+      process.env.CLOUDINARY_API_SECRET!
+    );
+
+    res.status(200).json({
+      success: true,
+      signature,
+      timestamp,
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      folder,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ── POST /api/photos/save-direct  (admin only) ───────────────────────────────
+// Saves a photo/video record after the browser has uploaded directly to Cloudinary.
+export const saveDirectUpload = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const {
+      eventId, publicId, secureUrl, originalName,
+      width, height, fileSize, resourceType,
+    } = req.body as {
+      eventId: string; publicId: string; secureUrl: string; originalName: string;
+      width?: number; height?: number; fileSize?: number; resourceType?: string;
+    };
+
+    const adminId = req.user!._id.toString();
+
+    const event = await Event.findById(eventId);
+    if (!event) {
+      res.status(404).json({ success: false, message: 'Event not found' });
+      return;
+    }
+    if (event.adminId.toString() !== adminId) {
+      res.status(403).json({ success: false, message: 'Only the admin can upload media' });
+      return;
+    }
+
+    // Verify the upload came from the pixora folder
+    if (!publicId.startsWith('pixora/')) {
+      res.status(400).json({ success: false, message: 'Invalid upload origin' });
+      return;
+    }
+
+    const PhotoModel = getPhotoModel(eventId);
+    const photo = await PhotoModel.create({
+      imageUrl: secureUrl,
+      publicId,
+      originalName,
+      uploadedBy: req.user!._id,
+      metadata: { fileSize, width, height },
+      mediaType: resourceType === 'video' ? 'video' : 'photo',
+      isPublic: false,
+    });
+
+    res.status(201).json({ success: true, photo });
   } catch (error) {
     next(error);
   }

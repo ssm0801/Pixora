@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { Photo } from '@/types';
 import { Button } from '@/components/ui/button';
 import { X, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { previewUrl } from '@/lib/cloudinary';
 
 interface PhotoModalProps {
   photo: Photo | null;
@@ -86,18 +87,27 @@ export default function PhotoModal({ photo, photos, onClose, onNavigate }: Photo
         </Button>
       )}
 
-      {/* Image */}
+      {/* Image or Video */}
       <div
         className="relative max-w-5xl max-h-[85vh] w-full h-full"
         onClick={(e) => e.stopPropagation()}
       >
-        <Image
-          src={photo.imageUrl}
-          alt="Photo"
-          fill
-          className="object-contain"
-          sizes="(max-width: 1024px) 100vw, 1024px"
-        />
+        {photo.mediaType === 'video' ? (
+          <video
+            src={photo.imageUrl}
+            controls
+            autoPlay
+            className="w-full h-full object-contain max-h-[85vh]"
+          />
+        ) : (
+          <Image
+            src={previewUrl(photo.imageUrl, photo.mediaType)}
+            alt="Photo"
+            fill
+            className="object-contain"
+            sizes="(max-width: 1024px) 100vw, 1024px"
+          />
+        )}
       </div>
 
       {/* Next */}

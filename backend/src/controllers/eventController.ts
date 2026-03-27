@@ -6,6 +6,7 @@ import User from '../models/User';
 import { getPhotoModel } from '../models/Photo';
 import { cloudinary } from '../config/cloudinary';
 import { notify } from '../utils/notify';
+import { verifyOtp, sendInviteLink } from '../utils/otpService';
 import { Types } from 'mongoose';
 
 /** Normalise a raw access value. Folder IDs are stored as plain strings to avoid
@@ -210,7 +211,7 @@ export const inviteUser = async (
 
     await event.save();
 
-    // Notify the invited user
+    // Notify the invited user (in-app)
     await notify(
       invitee._id,
       'invite_received',
@@ -218,6 +219,17 @@ export const inviteUser = async (
       event._id,
       event.name
     );
+
+    // Send SMS (if phone) or email with the join link — non-blocking
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const joinUrl = `${frontendUrl}/join?code=${event.code}`;
+    sendInviteLink({
+      email: invitee.email,
+      phone: invitee.phone || undefined,
+      inviterName: req.user!.name,
+      eventName: event.name,
+      joinUrl,
+    }).catch((err) => console.error('[invite] Failed to send invite link:', err));
 
     res.status(200).json({
       success: true,
@@ -422,6 +434,21 @@ export const deleteEvent = async (
 
     if (event.adminId.toString() !== req.user!._id.toString()) {
       res.status(403).json({ success: false, message: 'Only the admin can delete this event' });
+      return;
+    }
+
+    // Require OTP confirmation
+    const { otp } = req.body as { otp?: string };
+    if (!otp) {
+      res.status(400).json({ success: false, message: 'OTP confirmation is required to delete an event' });
+      return;
+    }
+    const adminUser = await User.findById(req.user!._id);
+    if (!adminUser) { res.status(404).json({ success: false, message: 'User not found' }); return; }
+    try {
+      await verifyOtp(adminUser.email, 'email', 'delete-event', otp.trim());
+    } catch (err: any) {
+      res.status(400).json({ success: false, message: err.message });
       return;
     }
 

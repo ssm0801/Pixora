@@ -48,6 +48,7 @@ export interface Photo {
   originalName: string;
   uploadedBy: { _id: string; name: string };
   metadata?: PhotoMetadata;
+  mediaType?: 'photo' | 'video';
   isPublic: boolean;
   isDeleted: boolean;
   deletedAt?: string;

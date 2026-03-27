@@ -7,10 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
-import { authApi } from '@/lib/api';
+import { authApi, otpApi } from '@/lib/api';
 import { saveAuth, getToken } from '@/lib/auth';
 import { toast } from 'sonner';
-import { User, Lock, Trash2, AlertTriangle, Eye, EyeOff, Check, X, ChevronLeft } from 'lucide-react';
+import { User, Lock, Trash2, AlertTriangle, Eye, EyeOff, Check, X, ChevronLeft, Loader2 } from 'lucide-react';
+import OtpInput from '@/components/OtpInput';
+import PhoneInput from '@/components/PhoneInput';
 
 const pwdRules = [
   { id: 'len',     label: 'At least 8 characters',        test: (p: string) => p.length >= 8          },
@@ -35,10 +37,33 @@ export default function ProfilePage() {
   const [showNext, setShowNext] = useState(false);
   const [newPwdFocused, setNewPwdFocused] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [pwdOtpStep, setPwdOtpStep] = useState<'form' | 'otp'>('form');
+  const [pwdOtp, setPwdOtp] = useState('');
+  const [pwdOtpTimer, setPwdOtpTimer] = useState(0);
+  const [pwdExpiryTimer, setPwdExpiryTimer] = useState(0);
+  const [pwdError, setPwdError] = useState<string | null>(null);
+
+  // OTP modal for profile changes
+  const [otpModal, setOtpModal] = useState<{
+    emailChanging: boolean;
+    phoneChanging: boolean;
+    pendingData: { firstName: string; lastName: string; email: string; phone: string };
+  } | null>(null);
+  const [emailOtp, setEmailOtp] = useState('');
+  const [phoneOtp, setPhoneOtp] = useState('');
+  const [emailOtpTimer, setEmailOtpTimer] = useState(0);
+  const [phoneOtpTimer, setPhoneOtpTimer] = useState(0);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [savingWithOtp, setSavingWithOtp] = useState(false);
+  const [otpExpiryTimer, setOtpExpiryTimer] = useState(0);
 
   // Delete account
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteAccountOtpStep, setDeleteAccountOtpStep] = useState<'confirm' | 'otp'>('confirm');
+  const [deleteAccountOtp, setDeleteAccountOtp] = useState('');
+  const [deleteAccountOtpTimer, setDeleteAccountOtpTimer] = useState(0);
+  const [deleteAccountExpiryTimer, setDeleteAccountExpiryTimer] = useState(0);
 
   // Pre-fill from context
   useEffect(() => {
@@ -52,10 +77,96 @@ export default function ProfilePage() {
     }
   }, [user]);
 
+  // OTP countdown timers
+  useEffect(() => {
+    if (emailOtpTimer <= 0) return;
+    const t = setTimeout(() => setEmailOtpTimer((v) => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [emailOtpTimer]);
+  useEffect(() => {
+    if (phoneOtpTimer <= 0) return;
+    const t = setTimeout(() => setPhoneOtpTimer((v) => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [phoneOtpTimer]);
+  useEffect(() => {
+    if (otpExpiryTimer <= 0) return;
+    const t = setTimeout(() => setOtpExpiryTimer((v) => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [otpExpiryTimer]);
+  useEffect(() => {
+    if (deleteAccountOtpTimer <= 0) return;
+    const t = setTimeout(() => setDeleteAccountOtpTimer((v) => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [deleteAccountOtpTimer]);
+  useEffect(() => {
+    if (deleteAccountExpiryTimer <= 0) return;
+    const t = setTimeout(() => setDeleteAccountExpiryTimer((v) => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [deleteAccountExpiryTimer]);
+
+  useEffect(() => {
+    if (pwdOtpTimer <= 0) return;
+    const t = setTimeout(() => setPwdOtpTimer((v) => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [pwdOtpTimer]);
+  useEffect(() => {
+    if (pwdExpiryTimer <= 0) return;
+    const t = setTimeout(() => setPwdExpiryTimer((v) => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [pwdExpiryTimer]);
+
+  const fmtExpiry = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile.firstName.trim()) { toast.error('First name is required'); return; }
     if (!profile.lastName.trim()) { toast.error('Last name is required'); return; }
+
+    const emailChanging = !!profile.email.trim() && profile.email.toLowerCase().trim() !== user?.email;
+    const phoneChanging = !!profile.phone.trim() && profile.phone.trim() !== (user as any)?.phone;
+
+    if (emailChanging || phoneChanging) {
+      // Need OTP verification — open modal and send OTPs
+      const pendingData = {
+        firstName: profile.firstName.trim(),
+        lastName: profile.lastName.trim(),
+        email: profile.email.trim(),
+        phone: profile.phone.trim(),
+      };
+      setEmailOtp('');
+      setPhoneOtp('');
+      setEmailOtpTimer(0);
+      setPhoneOtpTimer(0);
+      setSendingOtp(true);
+      try {
+        // Check availability before sending OTPs
+        await authApi.checkAvailability({
+          ...(emailChanging && { email: profile.email.toLowerCase().trim() }),
+          ...(phoneChanging && { phone: profile.phone.trim() }),
+        });
+
+        const sends: Promise<any>[] = [];
+        if (emailChanging) sends.push(otpApi.send(profile.email.toLowerCase().trim(), 'email', 'update-email'));
+        if (phoneChanging) sends.push(otpApi.send(profile.phone.trim().toLowerCase(), 'phone', 'update-phone'));
+        await Promise.all(sends);
+        if (emailChanging) setEmailOtpTimer(60);
+        if (phoneChanging) setPhoneOtpTimer(60);
+        setOtpExpiryTimer(600);
+        setOtpModal({ emailChanging, phoneChanging, pendingData });
+        toast.success('OTP(s) sent for verification');
+      } catch (err: any) {
+        const msg = err.response?.data?.message || 'Failed to send OTP';
+        const field = err.response?.data?.field;
+        toast.error(msg);
+        // Reset the conflicting field back to the current saved value
+        if (field === 'email') setProfile((p) => ({ ...p, email: user?.email ?? '' }));
+        if (field === 'phone') setProfile((p) => ({ ...p, phone: (user as any)?.phone ?? '' }));
+      } finally {
+        setSendingOtp(false);
+      }
+      return;
+    }
+
     setProfileContactMsg(null);
     setSavingProfile(true);
     try {
@@ -65,7 +176,6 @@ export default function ProfilePage() {
         email: profile.email.trim(),
         phone: profile.phone.trim(),
       });
-      // Update stored user
       const token = getToken()!;
       saveAuth(token, data.user);
       toast.success('Profile updated');
@@ -80,33 +190,137 @@ export default function ProfilePage() {
     }
   };
 
+  const handleOtpResendEmail = async () => {
+    if (!otpModal || emailOtpTimer > 0) return;
+    try {
+      await otpApi.send(otpModal.pendingData.email.toLowerCase(), 'email', 'update-email');
+      setEmailOtpTimer(60);
+      toast.success('Email OTP resent');
+    } catch { toast.error('Failed to resend email OTP'); }
+  };
+
+  const handleOtpResendPhone = async () => {
+    if (!otpModal || phoneOtpTimer > 0) return;
+    try {
+      await otpApi.send(otpModal.pendingData.phone.trim().toLowerCase(), 'phone', 'update-phone');
+      setPhoneOtpTimer(60);
+      toast.success('Phone OTP resent');
+    } catch { toast.error('Failed to resend phone OTP'); }
+  };
+
+  const handleOtpSave = async () => {
+    if (!otpModal) return;
+    if (otpModal.emailChanging && emailOtp.length !== 6) { toast.error('Please enter the 6-digit email OTP'); return; }
+    if (otpModal.phoneChanging && phoneOtp.length !== 6) { toast.error('Please enter the 6-digit phone OTP'); return; }
+    setProfileContactMsg(null);
+    setSavingWithOtp(true);
+    try {
+      const { data } = await authApi.updateProfile({
+        firstName: otpModal.pendingData.firstName,
+        lastName: otpModal.pendingData.lastName,
+        email: otpModal.pendingData.email,
+        phone: otpModal.pendingData.phone,
+        ...(otpModal.emailChanging ? { emailOtp } : {}),
+        ...(otpModal.phoneChanging ? { phoneOtp } : {}),
+      });
+      const token = getToken()!;
+      saveAuth(token, data.user);
+      toast.success('Profile updated');
+      setOtpModal(null);
+    } catch (err: any) {
+      if (err.response?.data?.code === 'ACCOUNT_DEACTIVATED') {
+        setProfileContactMsg(err.response.data.message);
+        setOtpModal(null);
+      } else {
+        toast.error(err.response?.data?.message || 'Failed to update profile');
+      }
+    } finally {
+      setSavingWithOtp(false);
+    }
+  };
+
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!passwords.current) { toast.error('Current password is required'); return; }
     const allPwdPassed = pwdRules.every((r) => r.test(passwords.next));
     if (!allPwdPassed) { toast.error('New password does not meet the requirements'); return; }
-    if (passwords.next !== passwords.confirm) { toast.error('Passwords do not match'); return; }
+    if (passwords.next !== passwords.confirm) { toast.error('New passwords do not match'); return; }
+    if (passwords.next === passwords.current) { toast.error('New password must be different from your current password'); return; }
+    // Step 1: send OTP
     setSavingPassword(true);
     try {
-      await authApi.changePassword({ currentPassword: passwords.current, newPassword: passwords.next });
-      toast.success('Password updated');
-      setPasswords({ current: '', next: '', confirm: '' });
+      await otpApi.send(user!.email, 'email', 'change-password');
+      setPwdOtpStep('otp');
+      setPwdOtpTimer(60);
+      setPwdExpiryTimer(600);
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to change password');
+      toast.error(err.response?.data?.message || 'Failed to send OTP');
     } finally {
       setSavingPassword(false);
+    }
+  };
+
+  const handleConfirmChangePassword = async () => {
+    setSavingPassword(true);
+    setPwdError(null);
+    try {
+      await authApi.changePassword({ currentPassword: passwords.current, newPassword: passwords.next, otp: pwdOtp });
+      toast.success('Password updated');
+      setPasswords({ current: '', next: '', confirm: '' });
+      setPwdOtpStep('form');
+      setPwdOtp('');
+      setPwdExpiryTimer(0);
+    } catch (err: any) {
+      setPwdError(err.response?.data?.message || 'Failed to change password');
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const handleResendPwdOtp = async () => {
+    if (pwdOtpTimer > 0) return;
+    try {
+      await otpApi.send(user!.email, 'email', 'change-password');
+      setPwdOtpTimer(60);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to resend OTP');
+    }
+  };
+
+  const handleRequestDeleteAccountOtp = async () => {
+    if (!user?.email) return;
+    setDeletingAccount(true);
+    try {
+      await otpApi.send(user.email, 'email', 'delete-account');
+      setDeleteAccountOtpStep('otp');
+      setDeleteAccountOtpTimer(60);
+      setDeleteAccountExpiryTimer(600);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to send OTP');
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
+
+  const handleResendDeleteAccountOtp = async () => {
+    if (deleteAccountOtpTimer > 0 || !user?.email) return;
+    try {
+      await otpApi.send(user.email, 'email', 'delete-account');
+      setDeleteAccountOtpTimer(60);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to resend OTP');
     }
   };
 
   const handleDeleteAccount = async () => {
     setDeletingAccount(true);
     try {
-      await authApi.deleteAccount();
+      await authApi.deleteAccount(deleteAccountOtp);
       toast.success('Account deleted');
       logout();
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to delete account');
       setDeletingAccount(false);
-      setDeleteConfirm(false);
     }
   };
 
@@ -178,14 +392,10 @@ export default function ProfilePage() {
                   )}
                 </div>
                 <div className="sm:col-span-2 space-y-1.5">
-                  <Label htmlFor="profile-phone" className="text-[13px]">Phone number <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                  <Input
-                    id="profile-phone"
-                    type="tel"
+                  <Label className="text-[13px]">Phone number <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <PhoneInput
                     value={profile.phone}
-                    onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
-                    placeholder="+1 555 000 0000"
-                    maxLength={20}
+                    onChange={(v) => setProfile((p) => ({ ...p, phone: v }))}
                   />
                 </div>
               </div>
@@ -197,8 +407,8 @@ export default function ProfilePage() {
                   </a>
                 </div>
               )}
-              <Button type="submit" disabled={savingProfile}>
-                {savingProfile ? 'Saving…' : 'Save changes'}
+              <Button type="submit" disabled={savingProfile || sendingOtp}>
+                {sendingOtp ? 'Sending OTP…' : savingProfile ? 'Saving…' : 'Save changes'}
               </Button>
             </form>
           </div>
@@ -217,6 +427,31 @@ export default function ProfilePage() {
               </div>
 
               <form onSubmit={handleChangePassword} className="space-y-4">
+              {pwdOtpStep === 'otp' ? (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">Enter the 6-digit code sent to <span className="font-medium text-foreground">{user?.email}</span> to confirm.</p>
+                  <div className={`flex items-center justify-between text-[12px] px-3 py-2 rounded-lg ${pwdExpiryTimer <= 60 && pwdExpiryTimer > 0 ? 'bg-orange-500/10 text-orange-500' : pwdExpiryTimer === 0 ? 'bg-destructive/10 text-destructive' : 'bg-muted/50 text-muted-foreground'}`}>
+                    <span>{pwdExpiryTimer === 0 ? 'OTP expired — go back and try again' : 'Expires in'}</span>
+                    {pwdExpiryTimer > 0 && <span className="font-mono font-semibold">{fmtExpiry(pwdExpiryTimer)}</span>}
+                  </div>
+                  <OtpInput value={pwdOtp} onChange={(v) => { setPwdOtp(v); setPwdError(null); }} disabled={savingPassword} />
+                  {pwdError && (
+                    <p className="text-[12.5px] text-destructive flex items-center gap-1.5">
+                      <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                      {pwdError}
+                    </p>
+                  )}
+                  <p className="text-center text-xs text-muted-foreground">
+                    {pwdOtpTimer > 0 ? <>Resend in {pwdOtpTimer}s</> : <button type="button" onClick={handleResendPwdOtp} className="text-primary hover:underline">Resend code</button>}
+                  </p>
+                  <div className="flex gap-3">
+                    <Button type="button" variant="outline" className="flex-1" onClick={() => { setPwdOtpStep('form'); setPwdOtp(''); setPwdExpiryTimer(0); setPwdError(null); }} disabled={savingPassword}>Back</Button>
+                    <Button type="button" className="flex-1" onClick={handleConfirmChangePassword} disabled={savingPassword || pwdOtp.length < 6 || pwdExpiryTimer === 0}>
+                      {savingPassword ? 'Updating…' : 'Confirm'}
+                    </Button>
+                  </div>
+                </div>
+              ) : (<>
                 <div className="space-y-1.5">
                   <Label htmlFor="pwd-current" className="text-[13px]">Current password</Label>
                   <div className="relative">
@@ -247,7 +482,7 @@ export default function ProfilePage() {
                       onChange={(e) => setPasswords((p) => ({ ...p, next: e.target.value }))}
                       onFocus={() => setNewPwdFocused(true)}
                       onBlur={() => setNewPwdFocused(false)}
-                      placeholder="Min. 8 characters"
+                      placeholder="Enter new password"
                       minLength={8}
                       required
                     />
@@ -284,9 +519,18 @@ export default function ProfilePage() {
                     required
                   />
                 </div>
-                <Button type="submit" disabled={savingPassword}>
-                  {savingPassword ? 'Updating…' : 'Update password'}
+                <Button
+                  type="submit"
+                  disabled={
+                    savingPassword ||
+                    !passwords.current ||
+                    !pwdRules.every((r) => r.test(passwords.next)) ||
+                    passwords.next !== passwords.confirm
+                  }
+                >
+                  {savingPassword ? 'Sending OTP…' : 'Update password'}
                 </Button>
+              </>)}
               </form>
             </div>
           )}
@@ -312,6 +556,61 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {/* ── OTP verification modal for profile changes ───────────────────── */}
+      {otpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-background rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5 border">
+            <div>
+              <h2 className="text-base font-semibold">Verify your changes</h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                Enter the OTP{otpModal.emailChanging && otpModal.phoneChanging ? 's' : ''} sent to verify your new {[otpModal.emailChanging && 'email', otpModal.phoneChanging && 'phone number'].filter(Boolean).join(' and ')}.
+              </p>
+            </div>
+
+            {/* Expiry countdown */}
+            <div className={`flex items-center justify-between text-[12px] px-3 py-2 rounded-lg ${otpExpiryTimer <= 60 && otpExpiryTimer > 0 ? 'bg-orange-500/10 text-orange-500' : otpExpiryTimer === 0 ? 'bg-destructive/10 text-destructive' : 'bg-muted/50 text-muted-foreground'}`}>
+              <span>{otpExpiryTimer === 0 ? 'OTP expired — close and try again' : 'Expires in'}</span>
+              {otpExpiryTimer > 0 && <span className="font-mono font-semibold">{fmtExpiry(otpExpiryTimer)}</span>}
+            </div>
+
+            {otpModal.emailChanging && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[13px] font-medium">Email OTP</Label>
+                  <button type="button" onClick={handleOtpResendEmail} disabled={emailOtpTimer > 0} className="text-[12px] text-primary hover:underline disabled:text-muted-foreground disabled:no-underline">
+                    {emailOtpTimer > 0 ? `Resend in ${emailOtpTimer}s` : 'Resend'}
+                  </button>
+                </div>
+                <p className="text-[12px] text-muted-foreground">{otpModal.pendingData.email}</p>
+                <OtpInput value={emailOtp} onChange={setEmailOtp} disabled={savingWithOtp} />
+              </div>
+            )}
+
+            {otpModal.phoneChanging && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[13px] font-medium">Phone OTP</Label>
+                  <button type="button" onClick={handleOtpResendPhone} disabled={phoneOtpTimer > 0} className="text-[12px] text-primary hover:underline disabled:text-muted-foreground disabled:no-underline">
+                    {phoneOtpTimer > 0 ? `Resend in ${phoneOtpTimer}s` : 'Resend'}
+                  </button>
+                </div>
+                <p className="text-[12px] text-muted-foreground">{otpModal.pendingData.phone}</p>
+                <OtpInput value={phoneOtp} onChange={setPhoneOtp} disabled={savingWithOtp} />
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-1">
+              <Button variant="outline" className="flex-1" onClick={() => { setOtpModal(null); setOtpExpiryTimer(0); }} disabled={savingWithOtp}>
+                Cancel
+              </Button>
+              <Button className="flex-1" onClick={handleOtpSave} disabled={savingWithOtp || otpExpiryTimer === 0}>
+                {savingWithOtp ? 'Saving…' : 'Verify & Save'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Delete account confirmation ───────────────────────────────────── */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -322,17 +621,48 @@ export default function ProfilePage() {
               </div>
               <h2 className="text-base font-semibold">Delete account?</h2>
             </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Your account, all events you manage, and all associated data will be permanently deleted. This cannot be undone.
-            </p>
-            <div className="flex gap-3 pt-1">
-              <Button variant="outline" className="flex-1" onClick={() => setDeleteConfirm(false)} disabled={deletingAccount}>
-                Cancel
-              </Button>
-              <Button variant="destructive" className="flex-1" onClick={handleDeleteAccount} disabled={deletingAccount}>
-                {deletingAccount ? 'Deleting…' : 'Yes, delete'}
-              </Button>
-            </div>
+
+            {deleteAccountOtpStep === 'confirm' ? (
+              <>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Your account, all events you manage, and all associated data will be permanently deleted. This cannot be undone.
+                </p>
+                <div className="flex gap-3 pt-1">
+                  <Button variant="outline" className="flex-1" onClick={() => setDeleteConfirm(false)} disabled={deletingAccount}>
+                    Cancel
+                  </Button>
+                  <Button variant="destructive" className="flex-1" onClick={handleRequestDeleteAccountOtp} disabled={deletingAccount}>
+                    {deletingAccount ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Sending OTP…</> : 'Continue'}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Enter the 6-digit code sent to <span className="font-medium text-foreground">{user?.email}</span> to confirm deletion.
+                </p>
+                <div className={`flex items-center justify-between text-[12px] px-3 py-2 rounded-lg ${deleteAccountExpiryTimer <= 60 && deleteAccountExpiryTimer > 0 ? 'bg-orange-500/10 text-orange-500' : deleteAccountExpiryTimer === 0 ? 'bg-destructive/10 text-destructive' : 'bg-muted/50 text-muted-foreground'}`}>
+                  <span>{deleteAccountExpiryTimer === 0 ? 'OTP expired — go back and try again' : 'Expires in'}</span>
+                  {deleteAccountExpiryTimer > 0 && <span className="font-mono font-semibold">{fmtExpiry(deleteAccountExpiryTimer)}</span>}
+                </div>
+                <OtpInput value={deleteAccountOtp} onChange={setDeleteAccountOtp} disabled={deletingAccount} />
+                <p className="text-center text-xs text-muted-foreground">
+                  {deleteAccountOtpTimer > 0 ? (
+                    <>Resend in {deleteAccountOtpTimer}s</>
+                  ) : (
+                    <button onClick={handleResendDeleteAccountOtp} className="text-primary hover:underline">Resend code</button>
+                  )}
+                </p>
+                <div className="flex gap-3 pt-1">
+                  <Button variant="outline" className="flex-1" onClick={() => { setDeleteConfirm(false); setDeleteAccountOtpStep('confirm'); setDeleteAccountOtp(''); setDeleteAccountExpiryTimer(0); }} disabled={deletingAccount}>
+                    Cancel
+                  </Button>
+                  <Button variant="destructive" className="flex-1" onClick={handleDeleteAccount} disabled={deletingAccount || deleteAccountOtp.length < 6 || deleteAccountExpiryTimer === 0}>
+                    {deletingAccount ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Deleting…</> : 'Delete account'}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
