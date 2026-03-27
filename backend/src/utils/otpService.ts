@@ -7,7 +7,8 @@ import nodemailer from 'nodemailer';
 // Each time slot is 10 minutes; we accept the current and previous slot to
 // handle edge cases where the user submits just after a slot boundary.
 
-const OTP_SECRET = process.env.OTP_SECRET || 'pixora-otp-default-secret';
+const OTP_SECRET = process.env.OTP_SECRET;
+if (!OTP_SECRET) throw new Error('OTP_SECRET environment variable is required');
 const SLOT_MS = 10 * 60 * 1000; // 10-minute window
 
 function timeSlot(offsetSlots = 0): number {
@@ -58,7 +59,7 @@ export async function sendEmailOtp(email: string, code: string, purpose: string)
   }
 
   const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '587'),
     secure: false,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
@@ -112,7 +113,7 @@ async function sendInviteEmail(to: string, inviterName: string, eventName: strin
     return;
   }
   const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '587'),
     secure: false,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
