@@ -8,7 +8,8 @@ import QRCode from 'react-qr-code';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/hooks/useAuth';
 import { useEvent } from '@/hooks/useEvents';
-import { eventApi, folderApi } from '@/lib/api';
+import { eventApi, folderApi, otpApi } from '@/lib/api';
+import OtpInput from '@/components/OtpInput';
 import { Folder } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +30,7 @@ import {
   Shield,
   Calendar,
   FolderOpen,
+  Loader2,
 } from 'lucide-react';
 
 function SettingsContent({ eventId }: { eventId: string }) {
@@ -87,6 +89,9 @@ function SettingsContent({ eventId }: { eventId: string }) {
   // ── Delete / Leave ────────────────────────────────────────────────────────
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingEvent, setDeletingEvent] = useState(false);
+  const [deleteOtpStep, setDeleteOtpStep] = useState<'confirm' | 'otp'>('confirm');
+  const [deleteOtp, setDeleteOtp] = useState('');
+  const [deleteOtpTimer, setDeleteOtpTimer] = useState(0);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
@@ -211,19 +216,45 @@ function SettingsContent({ eventId }: { eventId: string }) {
     }
   };
 
-  // ── Delete event ──────────────────────────────────────────────────────────
+  // ── Delete event (OTP flow) ───────────────────────────────────────────────
+  const handleRequestDeleteOtp = async () => {
+    if (!user?.email) return;
+    try {
+      await otpApi.send(user.email, 'email', 'delete-event');
+      setDeleteOtpStep('otp');
+      setDeleteOtpTimer(60);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to send OTP');
+    }
+  };
+
+  const handleResendDeleteOtp = async () => {
+    if (deleteOtpTimer > 0 || !user?.email) return;
+    try {
+      await otpApi.send(user.email, 'email', 'delete-event');
+      setDeleteOtpTimer(60);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to resend OTP');
+    }
+  };
+
   const handleDeleteEvent = async () => {
     setDeletingEvent(true);
     try {
-      await eventApi.delete(eventId);
+      await eventApi.delete(eventId, deleteOtp);
       toast.success('Event deleted');
       router.push('/');
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to delete event');
       setDeletingEvent(false);
-      setShowDeleteConfirm(false);
     }
   };
+
+  useEffect(() => {
+    if (deleteOtpTimer <= 0) return;
+    const t = setTimeout(() => setDeleteOtpTimer((v) => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [deleteOtpTimer]);
 
   // ── Leave event ───────────────────────────────────────────────────────────
   const handleLeaveEvent = async () => {
@@ -854,29 +885,65 @@ function SettingsContent({ eventId }: { eventId: string }) {
               </div>
               <h2 className="text-lg font-semibold">Delete event?</h2>
             </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              This will permanently delete{' '}
-              <span className="font-semibold text-foreground">"{event.name}"</span>,{' '}
-              all photos, and remove all members. This cannot be undone.
-            </p>
-            <div className="flex gap-3 pt-1">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => setShowDeleteConfirm(false)}
-                disabled={deletingEvent}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                className="flex-1"
-                onClick={handleDeleteEvent}
-                disabled={deletingEvent}
-              >
-                {deletingEvent ? 'Deleting…' : 'Yes, delete'}
-              </Button>
-            </div>
+
+            {deleteOtpStep === 'confirm' ? (
+              <>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  This will permanently delete{' '}
+                  <span className="font-semibold text-foreground">"{event.name}"</span>,{' '}
+                  all photos, and remove all members. This cannot be undone.
+                </p>
+                <div className="flex gap-3 pt-1">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setShowDeleteConfirm(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    className="flex-1"
+                    onClick={handleRequestDeleteOtp}
+                    disabled={deletingEvent}
+                  >
+                    {deletingEvent ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Sending OTP…</> : 'Continue'}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Enter the 6-digit code sent to <span className="font-medium text-foreground">{user?.email}</span> to confirm deletion.
+                </p>
+                <OtpInput value={deleteOtp} onChange={setDeleteOtp} />
+                <div className="flex gap-3 pt-1">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => { setShowDeleteConfirm(false); setDeleteOtpStep('confirm'); setDeleteOtp(''); }}
+                    disabled={deletingEvent}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    className="flex-1"
+                    onClick={handleDeleteEvent}
+                    disabled={deletingEvent || deleteOtp.length < 6}
+                  >
+                    {deletingEvent ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Deleting…</> : 'Delete'}
+                  </Button>
+                </div>
+                <p className="text-center text-xs text-muted-foreground">
+                  {deleteOtpTimer > 0 ? (
+                    <>Resend in {deleteOtpTimer}s</>
+                  ) : (
+                    <button onClick={handleResendDeleteOtp} className="text-primary hover:underline">Resend code</button>
+                  )}
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}

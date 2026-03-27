@@ -16,11 +16,17 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Global auth error handler
+// Global auth error handler — redirect to login only when a session token exists
+// (i.e. the token expired mid-session), NOT on a failed login attempt
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
+    if (
+      error.response?.status === 401 &&
+      typeof window !== 'undefined' &&
+      localStorage.getItem('pixora_token') &&
+      !error.config?.url?.includes('/auth/login')
+    ) {
       localStorage.removeItem('pixora_token');
       localStorage.removeItem('pixora_user');
       window.location.href = '/login';
@@ -31,19 +37,28 @@ api.interceptors.response.use(
 
 // ── Auth ────────────────────────────────────────────────────────────────────
 export const authApi = {
-  register: (data: { firstName: string; lastName: string; email: string; password: string }) =>
+  register: (data: { firstName: string; lastName: string; email: string; phone?: string; password: string; emailOtp?: string; phoneOtp?: string }) =>
     api.post('/auth/register', data),
   login: (data: { email: string; password: string }) =>
     api.post('/auth/login', data),
   me: () => api.get('/auth/me'),
-  updateProfile: (data: { firstName?: string; lastName?: string; phone?: string; email?: string }) =>
+  updateProfile: (data: { firstName?: string; lastName?: string; phone?: string; email?: string; emailOtp?: string; phoneOtp?: string }) =>
     api.put('/auth/profile', data),
-  changePassword: (data: { currentPassword: string; newPassword: string }) =>
+  changePassword: (data: { currentPassword: string; newPassword: string; otp: string }) =>
     api.put('/auth/password', data),
-  deleteAccount: () => api.delete('/auth/account'),
+  deleteAccount: (otp: string) => api.delete('/auth/account', { data: { otp } }),
+  checkAvailability: (data: { email?: string; phone?: string }) => api.post('/auth/check', data),
 };
 
 // ── Events ──────────────────────────────────────────────────────────────────
+// ── OTP ──────────────────────────────────────────────────────────────────────
+export const otpApi = {
+  send: (identifier: string, type: 'email' | 'phone', purpose: string) =>
+    api.post('/otp/send', { identifier, type, purpose }),
+  verify: (identifier: string, type: 'email' | 'phone', purpose: string, code: string) =>
+    api.post('/otp/verify', { identifier, type, purpose, code }),
+};
+
 export const eventApi = {
   list: () => api.get('/events'),
   create: (data: { name: string; description?: string }) =>
@@ -53,7 +68,7 @@ export const eventApi = {
     api.post('/events/invite', { eventId, email, access }),
   update: (id: string, data: { name?: string; description?: string }) =>
     api.patch(`/events/${id}`, data),
-  delete: (id: string) => api.delete(`/events/${id}`),
+  delete: (id: string, otp?: string) => api.delete(`/events/${id}`, { data: { otp } }),
   getMyInvites: () => api.get('/events/my-invites'),
   acceptInvite: (id: string) => api.post(`/events/${id}/accept`),
   declineInvite: (id: string) => api.post(`/events/${id}/decline`),
@@ -116,6 +131,19 @@ export const photoApi = {
     api.post(`/photos/${photoId}/restore?eventId=${eventId}`),
   permanentDelete: (photoId: string, eventId: string) =>
     api.delete(`/photos/${photoId}/permanent?eventId=${eventId}`),
+  // ── Direct upload (browser → Cloudinary, no server hop)
+  signUpload: (eventId: string) =>
+    api.post('/photos/sign-upload', { eventId }),
+  saveDirect: (data: {
+    eventId: string;
+    publicId: string;
+    secureUrl: string;
+    originalName: string;
+    width?: number;
+    height?: number;
+    fileSize?: number;
+    resourceType?: string;
+  }) => api.post('/photos/save-direct', data),
 };
 
 // ── Folders ──────────────────────────────────────────────────────────────────

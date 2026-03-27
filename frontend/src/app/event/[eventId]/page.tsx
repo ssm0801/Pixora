@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { thumbnailUrl } from '@/lib/cloudinary';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import JSZip from 'jszip';
@@ -8,6 +9,7 @@ import QRCode from 'react-qr-code';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import UploadZone from '@/components/UploadZone';
 import PhotoModal from '@/components/PhotoModal';
+import OtpInput from '@/components/OtpInput';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,16 +17,16 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { useEvent } from '@/hooks/useEvents';
 import { usePhotos } from '@/hooks/usePhotos';
-import { eventApi, photoApi, folderApi } from '@/lib/api';
+import { eventApi, photoApi, folderApi, otpApi } from '@/lib/api';
 import { Photo, Folder } from '@/types';
 import { toast } from 'sonner';
 import {
   Users, UserPlus, Trash2, Download, Calendar, AlertTriangle,
   ChevronLeft, ChevronRight, Upload, Shield, X, ArrowUp,
-  LogOut, ImageIcon, QrCode, Copy, Check,
+  LogOut, ImageIcon, QrCode, Copy, Check, Loader2,
   Heart, FolderPlus, FolderOpen, BarChart2,
   RotateCcw, SortDesc, Folder as FolderIcon, Settings,
-  LayoutGrid, List, ChevronDown,
+  LayoutGrid, List, ChevronDown, Film,
 } from 'lucide-react';
 
 export default function EventPage() {
@@ -35,6 +37,24 @@ export default function EventPage() {
 
   const { event, isLoading: eventLoading, error: eventError, refetch: refetchEvent } = useEvent(eventId);
   const { photos, isLoading: photosLoading, refetch: refetchPhotos } = usePhotos(eventId);
+
+  // Optimistically-added photos — shown immediately after upload, before the next full refetch
+  const [optimisticPhotos, setOptimisticPhotos] = useState<Photo[]>([]);
+
+  // Merge: show newly-uploaded items at the top, de-dup once refetch arrives
+  const allPhotos = useMemo(() => {
+    const fetchedIds = new Set(photos.map((p) => p._id));
+    return [...optimisticPhotos.filter((p) => !fetchedIds.has(p._id)), ...photos];
+  }, [optimisticPhotos, photos]);
+
+  const handlePhotoUploaded = useCallback((photo: Photo) => {
+    setOptimisticPhotos((prev) => [photo, ...prev]);
+  }, []);
+
+  const handleUploadComplete = useCallback(() => {
+    refetchPhotos();
+    setOptimisticPhotos([]);
+  }, [refetchPhotos]);
 
   // FAB upload ref (for admin quick upload)
   const fabInputRef = useRef<HTMLInputElement>(null);
@@ -59,6 +79,9 @@ export default function EventPage() {
   // Delete event
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingEvent, setDeletingEvent] = useState(false);
+  const [deleteOtpStep, setDeleteOtpStep] = useState<'confirm' | 'otp'>('confirm');
+  const [deleteOtp, setDeleteOtp] = useState('');
+  const [deleteOtpTimer, setDeleteOtpTimer] = useState(0);
 
   // Members modal
   const [membersOpen, setMembersOpen] = useState(false);
@@ -96,6 +119,9 @@ export default function EventPage() {
 
   // Views: 'all' | 'favorites' | folderId
   const [activeView, setActiveView] = useState<string>('all');
+
+  // Media type filter
+  const [mediaFilter, setMediaFilter] = useState<'all' | 'photo' | 'video'>('all');
 
   // Group by captured date
   const [groupByDate, setGroupByDate] = useState(false);
@@ -190,10 +216,15 @@ export default function EventPage() {
 
   // ── Computed: displayed & grouped photos ─────────────────────────────────
   const displayedPhotos = useMemo(() => {
-    if (activeView === 'favorites') return photos.filter((p) => favoritedIds.has(p._id));
-    if (activeView !== 'all') return photos.filter((p) => p.folderId === activeView);
-    return photos;
-  }, [photos, activeView, favoritedIds]);
+    let base: typeof allPhotos;
+    if (activeView === 'favorites') base = allPhotos.filter((p) => favoritedIds.has(p._id));
+    else if (activeView !== 'all') base = allPhotos.filter((p) => p.folderId === activeView);
+    else base = allPhotos;
+
+    if (mediaFilter === 'photo') return base.filter((p) => !p.mediaType || p.mediaType === 'photo');
+    if (mediaFilter === 'video') return base.filter((p) => p.mediaType === 'video');
+    return base;
+  }, [allPhotos, activeView, favoritedIds, mediaFilter]);
 
   const groupedPhotos = useMemo(() => {
     if (!groupByDate) return null;
@@ -234,7 +265,7 @@ export default function EventPage() {
   const executeBulkDownload = async () => {
     setDownloadConfirm(false);
     setBulkDownloading(true);
-    const toDownload = photos.filter((p) => selected.has(p._id));
+    const toDownload = allPhotos.filter((p) => selected.has(p._id));
     const zipName =
       activeView === 'all' || activeView === 'favorites'
         ? event?.name ?? 'photos'
@@ -360,18 +391,50 @@ export default function EventPage() {
   };
 
   // ── Delete event ──────────────────────────────────────────────────────────
-  const handleDeleteEvent = async () => {
+  const handleRequestDeleteOtp = async () => {
     setDeletingEvent(true);
     try {
-      await eventApi.delete(eventId);
+      await otpApi.send(user!.email, 'email', 'delete-event');
+      setDeleteOtpStep('otp');
+      setDeleteOtpTimer(60);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to send OTP');
+    } finally {
+      setDeletingEvent(false);
+    }
+  };
+
+  const handleDeleteEvent = async () => {
+    if (!deleteOtp || deleteOtp.length !== 6) {
+      toast.error('Enter the 6-digit OTP sent to your email');
+      return;
+    }
+    setDeletingEvent(true);
+    try {
+      await eventApi.delete(eventId, deleteOtp);
       toast.success('Event deleted');
       router.push('/');
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to delete event');
       setDeletingEvent(false);
-      setShowDeleteConfirm(false);
     }
   };
+
+  const handleResendDeleteOtp = async () => {
+    if (deleteOtpTimer > 0) return;
+    try {
+      await otpApi.send(user!.email, 'email', 'delete-event');
+      setDeleteOtpTimer(60);
+      toast.success('OTP resent');
+    } catch { toast.error('Failed to resend OTP'); }
+  };
+
+  // Delete-event OTP countdown
+  useEffect(() => {
+    if (deleteOtpTimer <= 0) return;
+    const t = setTimeout(() => setDeleteOtpTimer((v) => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [deleteOtpTimer]);
 
   const handleNavigate = useCallback((photo: Photo) => setSelectedPhoto(photo), []);
 
@@ -641,13 +704,34 @@ export default function EventPage() {
               else setSelectedPhoto(photo);
             }}
           >
-            <Image
-              src={photo.imageUrl}
-              alt={photo.originalName}
-              fill
-              className="object-cover transition-transform duration-200 group-hover:scale-105"
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 20vw"
-            />
+            {photo.mediaType === 'video' ? (
+              <>
+                {/* Use a JPEG thumbnail of the first frame — far cheaper than a <video> tag */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={thumbnailUrl(photo.imageUrl, 'video')}
+                  alt={photo.originalName}
+                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                  loading="lazy"
+                />
+                {/* Play icon — always visible, not on hover */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="bg-black/55 rounded-full p-2.5">
+                    <svg viewBox="0 0 24 24" className="h-5 w-5 fill-white drop-shadow">
+                      <path d="M8 5.14v13.72L19 12 8 5.14z" />
+                    </svg>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <Image
+                src={thumbnailUrl(photo.imageUrl, 'photo')}
+                alt={photo.originalName}
+                fill
+                className="object-cover transition-transform duration-200 group-hover:scale-105"
+                sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 20vw"
+              />
+            )}
 
             {isSelected && <div className="absolute inset-0 bg-primary/15 pointer-events-none" />}
 
@@ -755,7 +839,30 @@ export default function EventPage() {
 
             {/* Thumbnail */}
             <div className="shrink-0 h-10 w-10 rounded-md overflow-hidden bg-muted relative">
-              <Image src={photo.imageUrl} alt={photo.originalName} fill className="object-cover" sizes="40px" />
+              {photo.mediaType === 'video' ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={thumbnailUrl(photo.imageUrl, 'video')}
+                    alt={photo.originalName}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                    <svg viewBox="0 0 24 24" className="h-3 w-3 fill-white">
+                      <path d="M8 5.14v13.72L19 12 8 5.14z" />
+                    </svg>
+                  </div>
+                </>
+              ) : (
+                <Image
+                  src={thumbnailUrl(photo.imageUrl, 'photo')}
+                  alt={photo.originalName}
+                  fill
+                  className="object-cover"
+                  sizes="40px"
+                />
+              )}
             </div>
 
             {/* Name */}
@@ -871,7 +978,7 @@ export default function EventPage() {
               </div>
               <div className="flex items-center gap-1 pt-1 text-xs text-muted-foreground">
                 <ImageIcon className="h-3 w-3" />
-                {photos.length} / 500 photos
+                {photos.length} / 500 items
               </div>
             </div>
 
@@ -1020,15 +1127,20 @@ export default function EventPage() {
               <div data-tag="sidebar-upload-zone" className="flex-1 p-4 overflow-y-auto">
                 <div className="flex items-center gap-2 mb-3">
                   <Upload className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Upload photos</span>
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Upload photos & videos</span>
                 </div>
-                <UploadZone eventId={eventId} onUploadComplete={refetchPhotos} externalInputRef={fabInputRef} />
+                <UploadZone
+  eventId={eventId}
+  onUploadComplete={handleUploadComplete}
+  onPhotoUploaded={handlePhotoUploaded}
+  externalInputRef={fabInputRef}
+/>
               </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-center">
                 <ImageIcon className="h-8 w-8 text-muted-foreground/40" />
                 <p className="text-xs text-muted-foreground">
-                  {photos.length} photo{photos.length !== 1 ? 's' : ''} in this event
+                  {photos.length} item{photos.length !== 1 ? 's' : ''} in this event
                 </p>
               </div>
             )}
@@ -1069,6 +1181,23 @@ export default function EventPage() {
                 </span>
               </div>
             )}
+
+            {/* Media type filter */}
+            <div className="flex items-center rounded-lg border overflow-hidden text-[12px]">
+              {(['all', 'photo', 'video'] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setMediaFilter(f)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 transition-colors ${
+                    mediaFilter === f ? 'bg-muted text-foreground font-medium' : 'text-muted-foreground hover:bg-muted/60'
+                  } ${f !== 'all' ? 'border-l border-border' : ''}`}
+                  title={f === 'all' ? 'All media' : f === 'photo' ? 'Photos only' : 'Videos only'}
+                >
+                  {f === 'video' ? <Film className="h-3 w-3" /> : <ImageIcon className="h-3 w-3" />}
+                  <span className="hidden sm:inline capitalize">{f === 'all' ? 'All' : f === 'photo' ? 'Photos' : 'Videos'}</span>
+                </button>
+              ))}
+            </div>
 
             <div className="flex-1" />
 
@@ -1245,7 +1374,7 @@ export default function EventPage() {
       {/* ── Lightbox ───────────────────────────────────────────────────────── */}
       <PhotoModal
         photo={selectedPhoto}
-        photos={photos}
+        photos={displayedPhotos}
         onClose={() => setSelectedPhoto(null)}
         onNavigate={handleNavigate}
       />
@@ -1525,24 +1654,59 @@ export default function EventPage() {
       {showDeleteConfirm && (
         <div data-tag="modal-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div data-tag="modal-delete-event-confirm" className="bg-background rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 border">
-            <div className="flex items-center gap-3 text-destructive">
-              <div className="p-2 rounded-full bg-destructive/10">
-                <AlertTriangle className="h-5 w-5" />
-              </div>
-              <h2 className="text-lg font-semibold">Delete event?</h2>
-            </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              This will permanently delete{' '}
-              <span className="font-semibold text-foreground">"{event.name}"</span>,{' '}
-              all <span className="font-semibold text-foreground">{photos.length} photo{photos.length !== 1 ? 's' : ''}</span>,
-              and remove all members. This cannot be undone.
-            </p>
-            <div className="flex gap-3 pt-1">
-              <Button variant="outline" className="flex-1" onClick={() => setShowDeleteConfirm(false)} disabled={deletingEvent}>Cancel</Button>
-              <Button variant="destructive" className="flex-1" onClick={handleDeleteEvent} disabled={deletingEvent}>
-                {deletingEvent ? 'Deleting…' : 'Yes, delete'}
-              </Button>
-            </div>
+            {deleteOtpStep === 'confirm' ? (
+              <>
+                <div className="flex items-center gap-3 text-destructive">
+                  <div className="p-2 rounded-full bg-destructive/10">
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+                  <h2 className="text-lg font-semibold">Delete event?</h2>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  This will permanently delete{' '}
+                  <span className="font-semibold text-foreground">"{event.name}"</span>,{' '}
+                  all <span className="font-semibold text-foreground">{photos.length} photo{photos.length !== 1 ? 's' : ''}</span>,
+                  and remove all members. This cannot be undone.
+                </p>
+                <div className="flex gap-3 pt-1">
+                  <Button variant="outline" className="flex-1" onClick={() => setShowDeleteConfirm(false)} disabled={deletingEvent}>Cancel</Button>
+                  <Button variant="destructive" className="flex-1" onClick={handleRequestDeleteOtp} disabled={deletingEvent}>
+                    {deletingEvent ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Sending OTP…</> : 'Yes, delete'}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 text-destructive">
+                  <div className="p-2 rounded-full bg-destructive/10">
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+                  <h2 className="text-base font-semibold">Confirm with OTP</h2>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  An OTP was sent to <span className="font-medium text-foreground">{user?.email}</span>. Enter it below to confirm deletion.
+                </p>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[13px] font-medium">OTP</span>
+                    <button
+                      onClick={handleResendDeleteOtp}
+                      disabled={deleteOtpTimer > 0}
+                      className="text-[12px] text-primary hover:underline disabled:text-muted-foreground disabled:no-underline"
+                    >
+                      {deleteOtpTimer > 0 ? `Resend in ${deleteOtpTimer}s` : 'Resend'}
+                    </button>
+                  </div>
+                  <OtpInput value={deleteOtp} onChange={setDeleteOtp} disabled={deletingEvent} />
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <Button variant="outline" className="flex-1" onClick={() => { setDeleteOtpStep('confirm'); setDeleteOtp(''); }} disabled={deletingEvent}>Back</Button>
+                  <Button variant="destructive" className="flex-1" onClick={handleDeleteEvent} disabled={deletingEvent || deleteOtp.length !== 6}>
+                    {deletingEvent ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Deleting…</> : 'Delete event'}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

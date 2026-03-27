@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import passport from 'passport';
-import { register, login, getMe, updateProfile, changePassword, deleteAccount } from '../controllers/authController';
+import { register, login, getMe, updateProfile, changePassword, deleteAccount, checkAvailability } from '../controllers/authController';
 import { protect } from '../middlewares/auth';
 import { generateToken } from '../utils/generateToken';
 import { IUser } from '../models/User';
@@ -9,6 +9,7 @@ const router = Router();
 
 // ── Email / Password ────────────────────────────────────────────────────────
 router.post('/register', register as any);
+router.post('/check', checkAvailability as any);
 router.post('/login', login as any);
 router.get('/me', protect as any, getMe as any);
 router.put('/profile', protect as any, updateProfile as any);

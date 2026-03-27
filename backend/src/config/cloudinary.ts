@@ -12,10 +12,10 @@ const storage = new CloudinaryStorage({
   cloudinary,
   params: {
     folder: 'pixora',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
-    use_filename: true,      // preserve original filename as part of public_id
-    unique_filename: true,   // append random suffix to avoid collisions
-    transformation: [{ quality: 'auto', fetch_format: 'auto' }],
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov', 'webm', 'avi', 'mkv'],
+    use_filename: true,
+    unique_filename: true,
+    resource_type: 'auto',
   } as Record<string, unknown>,
 });
 
