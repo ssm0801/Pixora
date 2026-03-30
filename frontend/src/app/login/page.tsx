@@ -33,7 +33,7 @@ function LoginForm() {
   }, [searchParams]);
 
   const redirect = searchParams.get('redirect');
-  const redirectTo = redirect?.startsWith('/') ? redirect : '/';
+  const redirectTo = redirect?.startsWith('/') ? redirect : '/events';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

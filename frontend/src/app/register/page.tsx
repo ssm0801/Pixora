@@ -141,7 +141,7 @@ export default function RegisterPage() {
     try {
       await register(form.firstName.trim(), form.lastName.trim(), form.email, form.password, form.phone.trim(), emailOtp, phoneOtp);
       toast.success('Account created!');
-      router.push('/');
+      router.push('/events');
     } catch (err: any) {
       if (err.response?.data?.code === 'ACCOUNT_DEACTIVATED') {
         setContactTeamMsg(err.response.data.message);
@@ -306,8 +306,8 @@ export default function RegisterPage() {
             </form>
           </div>
         )}
-
-        <p className="text-center text-[13px] text-muted-foreground">
+          <GoogleButton label="Sign up with Google" redirectTo="/events" />
+          <p className="text-center text-[13px] text-muted-foreground">
           Already have an account?{' '}
           <Link href="/login" className="text-primary font-medium hover:underline underline-offset-4">Sign in</Link>
         </p>
