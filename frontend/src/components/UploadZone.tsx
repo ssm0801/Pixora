@@ -27,6 +27,7 @@ const CHUNK_SIZE       = 10 * 1024 * 1024; // 10 MB per chunk
 
 interface UploadZoneProps {
   eventId: string;
+  /** Called once when the entire batch finishes (success or partial success) */
   onUploadComplete: () => void;
   onPhotoUploaded?: (photo: Photo) => void;
   externalInputRef?: React.RefObject<HTMLInputElement | null>;
@@ -222,8 +223,12 @@ export default function UploadZone({
 
   return (
     <div className="space-y-3">
+      {/* Drop zone */}
       <div
-        onDragOver={(e) => { e.preventDefault(); if (!isUploading) setDragging(true); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!isUploading) setDragging(true);
+        }}
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
         onClick={() => !isUploading && inputRef.current?.click()}
@@ -294,7 +299,9 @@ export default function UploadZone({
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
               <span>
-                <span className="font-semibold text-foreground tabular-nums">{uploadState.done}</span>
+                <span className="font-semibold text-foreground tabular-nums">
+                  {uploadState.done}
+                </span>
                 {' / '}
                 <span className="tabular-nums">{uploadState.total}</span>
                 {' uploaded'}

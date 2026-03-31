@@ -5,6 +5,7 @@ import Footer from './Footer';
 
 // Pages that are inside the app shell — no public footer
 const HIDE_PREFIXES = [
+  '/events',
   '/event/',
   '/profile',
   '/notifications',

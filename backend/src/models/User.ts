@@ -12,7 +12,9 @@ export interface IUser extends Document {
   phone?: string;          // optional phone number
   isActive: boolean;       // false = soft-deleted; email/phone permanently reserved
   deletedAt?: Date;
+  passwordHistory: string[];  // last 2 hashed passwords (current + these = last 3 total)
   comparePassword(candidatePassword: string): Promise<boolean>;
+  isPasswordInHistory(candidate: string): Promise<boolean>;
 }
 
 const UserSchema = new Schema<IUser>(
@@ -55,6 +57,7 @@ const UserSchema = new Schema<IUser>(
     phone: { type: String, trim: true, maxlength: [20, 'Phone cannot exceed 20 characters'] },
     isActive: { type: Boolean, default: true, index: true },
     deletedAt: { type: Date },
+    passwordHistory: { type: [String], default: [] },
   },
   { timestamps: true }
 );
@@ -75,6 +78,17 @@ UserSchema.methods.comparePassword = async function (
 ): Promise<boolean> {
   if (!this.password) return false;
   return bcrypt.compare(candidatePassword, this.password);
+};
+
+// Check if candidate matches current password or any of the last 2 history entries (3 total)
+UserSchema.methods.isPasswordInHistory = async function (
+  candidatePassword: string
+): Promise<boolean> {
+  const hashes: string[] = [this.password, ...(this.passwordHistory || [])].filter(Boolean);
+  for (const hash of hashes) {
+    if (await bcrypt.compare(candidatePassword, hash)) return true;
+  }
+  return false;
 };
 
 export default mongoose.model<IUser>('User', UserSchema);

@@ -6,6 +6,7 @@ import User from '../models/User';
 import { getPhotoModel } from '../models/Photo';
 import { deleteFromS3 } from './mediaController';
 import { notify } from '../utils/notify';
+import { verifyOtp, sendInviteLink } from '../utils/otpService';
 import { Types } from 'mongoose';
 
 /** Normalise a raw access value. Folder IDs are stored as plain strings to avoid
@@ -210,7 +211,7 @@ export const inviteUser = async (
 
     await event.save();
 
-    // Notify the invited user
+    // Notify the invited user (in-app)
     await notify(
       invitee._id,
       'invite_received',
@@ -218,6 +219,17 @@ export const inviteUser = async (
       event._id,
       event.name
     );
+
+    // Send SMS (if phone) or email with the join link — non-blocking
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const joinUrl = `${frontendUrl}/join?code=${event.code}`;
+    sendInviteLink({
+      email: invitee.email,
+      phone: invitee.phone || undefined,
+      inviterName: req.user!.name,
+      eventName: event.name,
+      joinUrl,
+    }).catch((err) => console.error('[invite] Failed to send invite link:', err));
 
     res.status(200).json({
       success: true,

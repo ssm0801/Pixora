@@ -20,6 +20,7 @@ function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [form, setForm] = useState({ email: '', password: '' });
   const [contactTeamMsg, setContactTeamMsg] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Handle error params set by Google OAuth redirect
   useEffect(() => {
@@ -32,11 +33,12 @@ function LoginForm() {
   }, [searchParams]);
 
   const redirect = searchParams.get('redirect');
-  const redirectTo = redirect?.startsWith('/') ? redirect : '/';
+  const redirectTo = redirect?.startsWith('/') ? redirect : '/events';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setContactTeamMsg(null);
+    setAuthError(null);
     setIsLoading(true);
     try {
       await login(form.email, form.password);
@@ -46,7 +48,7 @@ function LoginForm() {
       if (err.response?.data?.code === 'ACCOUNT_DEACTIVATED') {
         setContactTeamMsg(err.response.data.message);
       } else {
-        toast.error(err.response?.data?.message || 'Login failed');
+        setAuthError('Invalid email or password');
       }
     } finally {
       setIsLoading(false);
@@ -79,10 +81,10 @@ function LoginForm() {
                 type="email"
                 placeholder="you@example.com"
                 value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                onChange={(e) => { setForm({ ...form, email: e.target.value }); setAuthError(null); }}
                 required
                 autoComplete="email"
-                className="h-9 text-[14px]"
+                className={`h-9 text-[14px] ${authError ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
               />
             </div>
             <div className="space-y-1.5">
@@ -92,12 +94,18 @@ function LoginForm() {
                 type="password"
                 placeholder="••••••••"
                 value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                onChange={(e) => { setForm({ ...form, password: e.target.value }); setAuthError(null); }}
                 required
                 autoComplete="current-password"
-                className="h-9 text-[14px]"
+                className={`h-9 text-[14px] ${authError ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
               />
             </div>
+            {authError && (
+              <p className="text-[12.5px] text-destructive flex items-center gap-1.5">
+                <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                {authError}
+              </p>
+            )}
             {contactTeamMsg && (
               <div className="rounded-lg border border-destructive/40 bg-destructive/8 px-3 py-2.5 text-[12.5px] text-destructive leading-snug">
                 <span className="font-semibold">Account unavailable.</span> {contactTeamMsg}{' '}

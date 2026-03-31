@@ -10,6 +10,7 @@ import mediaRoutes from './routes/mediaRoutes';
 import folderRoutes from './routes/folderRoutes';
 import analyticsRoutes from './routes/analyticsRoutes';
 import notificationRoutes from './routes/notificationRoutes';
+import otpRoutes from './routes/otpRoutes';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
@@ -34,6 +35,7 @@ app.use('/api/events', analyticsRoutes);
 app.use('/api/photos', photoRoutes);
 app.use('/api/media',  mediaRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/otp', otpRoutes);
 
 // Health check
 app.get('/health', (_req, res) => {

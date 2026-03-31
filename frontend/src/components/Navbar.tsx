@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { notificationApi } from '@/lib/api';
-import { Sun, Moon, Camera, User, LogOut, ChevronDown, Bell } from 'lucide-react';
+import { Sun, Moon, Camera, User, LogOut, ChevronDown, Bell, Calendar } from 'lucide-react';
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -58,7 +58,7 @@ export default function Navbar() {
 
         {/* Brand */}
         <Link
-          href="/"
+          href={isAuthenticated ? '/events' : '/'}
           className="flex items-center gap-2 font-bold text-[15px] tracking-tight text-foreground hover:text-primary transition-colors"
         >
           <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-primary/15 border border-primary/30 text-primary">
@@ -117,6 +117,14 @@ export default function Navbar() {
                       >
                         <User className="h-3.5 w-3.5" />
                         Profile
+                      </Link>
+                      <Link
+                        href="/events"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-muted transition-colors"
+                      >
+                        <Calendar className="h-3.5 w-3.5" />
+                        Events
                       </Link>
                       <div className="my-1 border-t" />
                       <button

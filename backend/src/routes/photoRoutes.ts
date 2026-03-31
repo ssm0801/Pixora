@@ -8,6 +8,8 @@ import {
   toggleVisibility,
   toggleFavorite,
   getFavorites,
+  getUploadSignature,
+  saveDirectUpload,
 } from '../controllers/photoController';
 import {
   assignPhotoToFolder,

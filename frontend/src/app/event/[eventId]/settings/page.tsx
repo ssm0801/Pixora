@@ -8,7 +8,8 @@ import QRCode from 'react-qr-code';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/hooks/useAuth';
 import { useEvent } from '@/hooks/useEvents';
-import { eventApi, folderApi } from '@/lib/api';
+import { eventApi, folderApi, otpApi } from '@/lib/api';
+import OtpInput from '@/components/OtpInput';
 import { Folder } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +30,7 @@ import {
   Shield,
   Calendar,
   FolderOpen,
+  Loader2,
 } from 'lucide-react';
 
 function SettingsContent({ eventId }: { eventId: string }) {
@@ -87,6 +89,9 @@ function SettingsContent({ eventId }: { eventId: string }) {
   // ── Delete / Leave ────────────────────────────────────────────────────────
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<'soft' | 'hard' | null>(null);
   const [deletingEvent, setDeletingEvent] = useState(false);
+  const [deleteOtpStep, setDeleteOtpStep] = useState<'confirm' | 'otp'>('confirm');
+  const [deleteOtp, setDeleteOtp] = useState('');
+  const [deleteOtpTimer, setDeleteOtpTimer] = useState(0);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
@@ -211,7 +216,28 @@ function SettingsContent({ eventId }: { eventId: string }) {
     }
   };
 
-  // ── Delete event ──────────────────────────────────────────────────────────
+  // ── Delete event (OTP flow) ───────────────────────────────────────────────
+  const handleRequestDeleteOtp = async () => {
+    if (!user?.email) return;
+    try {
+      await otpApi.send(user.email, 'email', 'delete-event');
+      setDeleteOtpStep('otp');
+      setDeleteOtpTimer(60);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to send OTP');
+    }
+  };
+
+  const handleResendDeleteOtp = async () => {
+    if (deleteOtpTimer > 0 || !user?.email) return;
+    try {
+      await otpApi.send(user.email, 'email', 'delete-event');
+      setDeleteOtpTimer(60);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to resend OTP');
+    }
+  };
+
   const handleDeleteEvent = async () => {
     if (!showDeleteConfirm) return;
     setDeletingEvent(true);
@@ -230,6 +256,12 @@ function SettingsContent({ eventId }: { eventId: string }) {
       setShowDeleteConfirm(null);
     }
   };
+
+  useEffect(() => {
+    if (deleteOtpTimer <= 0) return;
+    const t = setTimeout(() => setDeleteOtpTimer((v) => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [deleteOtpTimer]);
 
   // ── Leave event ───────────────────────────────────────────────────────────
   const handleLeaveEvent = async () => {
